@@ -1,0 +1,71 @@
+name: Build macOS Binary
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-macos:
+    runs-on: macos-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        toolchain: stable
+        targets: aarch64-apple-darwin
+    
+    - name: Cache cargo registry
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-
+    
+    - name: Generate semantic version
+      id: version
+      run: |
+        # Extract major and minor from Cargo.toml
+        MAJOR_MINOR=$(grep '^version = ' Cargo.toml | sed 's/version = "\([0-9]*\.[0-9]*\)\.[0-9]*"/\1/')
+        # Use GitHub run number as patch version
+        SEMANTIC_VERSION="${MAJOR_MINOR}.${{ github.run_number }}"
+        echo "version=${SEMANTIC_VERSION}" >> $GITHUB_OUTPUT
+        echo "Generated version: ${SEMANTIC_VERSION}"
+    
+    - name: Update Cargo.toml version
+      run: |
+        # Update version in Cargo.toml
+        sed -i '' 's/^version = "[0-9]*\.[0-9]*\.[0-9]*"/version = "${{ steps.version.outputs.version }}"/' Cargo.toml
+        echo "Updated Cargo.toml version:"
+        grep '^version = ' Cargo.toml
+    
+    - name: Build for aarch64-apple-darwin (Apple Silicon)
+      run: |
+        cargo build --release --target aarch64-apple-darwin
+        cp target/aarch64-apple-darwin/release/shuro shuro-aarch64-apple-darwin
+    
+    - name: Upload ARM64 binary
+      uses: actions/upload-artifact@v4
+      with:
+        name: shuro-aarch64-apple-darwin-v${{ steps.version.outputs.version }}
+        path: shuro-aarch64-apple-darwin
+    
+    - name: Display build info
+      run: |
+        echo "Build completed successfully!"
+        echo "Version: ${{ steps.version.outputs.version }}"
+        echo "Built for architecture: aarch64 (Apple Silicon)"
+        file shuro-aarch64-apple-darwin 
