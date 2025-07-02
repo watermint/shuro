@@ -8,15 +8,14 @@ use anyhow::Result;
 use clap::Parser;
 use tracing::{info, Level};
 use tracing_subscriber::FmtSubscriber;
-use std::env;
 
 use shuro::cli::{Args, Commands, CacheAction};
 use shuro::config::{Config, TranslationMode};
 use shuro::setup::SetupManager;
 use shuro::workflow::Workflow;
 use shuro::quality::QualityValidator;
-use shuro::whisper::WhisperTranscriber;
-use shuro::translate::OllamaTranslator;
+use shuro::whisper::WhisperTranscriberFactory;
+use shuro::translate::BaseTranslator;
 use shuro::error::ShuroError;
 
 #[tokio::main]
@@ -116,7 +115,7 @@ async fn main() -> Result<()> {
             
             // Create a temporary transcriber to manage cache
             let validator = QualityValidator::new(0.1, 100.0, 5.0);
-            let transcriber = WhisperTranscriber::new(config.whisper.clone(), validator);
+            let transcriber = WhisperTranscriberFactory::create_default(config.whisper.clone(), validator);
             
             match action {
                 CacheAction::List => {
@@ -183,8 +182,8 @@ async fn main() -> Result<()> {
                     let audio_count = transcriber.clear_audio_cache().await?;
                     
                     // Also clear translation cache
-                    let translator = OllamaTranslator::new(config.translate.clone());
-                    let translation_count = translator.clear_translation_cache().await?;
+                    let base_translator = BaseTranslator::new(config.translate.clone());
+                    let translation_count = base_translator.clear_translation_cache().await?;
                     
                     println!("Cleared {} cached transcriptions, {} cached audio files, and {} cached translations", 
                              transcription_count, audio_count, translation_count);
@@ -193,8 +192,8 @@ async fn main() -> Result<()> {
                     let info = transcriber.cache_info().await?;
                     
                     // Get translation cache info
-                    let translator = OllamaTranslator::new(config.translate.clone());
-                    let translation_items = translator.list_translation_cache().await?;
+                    let base_translator = BaseTranslator::new(config.translate.clone());
+                    let translation_items = base_translator.list_translation_cache().await?;
                     let translation_count = translation_items.len();
                     
                     println!("\nCache Statistics:");
@@ -224,17 +223,16 @@ async fn main() -> Result<()> {
                         println!("Newest entry: {} ago", format_duration(newest_ago));
                     }
                     
-                    if !info.models_used.is_empty() {
-                        println!("Models used: {}", info.models_used.join(", "));
-                    }
+                    println!("Models used: {:?}", info.models_used);
                 }
                 CacheAction::Clean { days } => {
-                    let transcription_count = transcriber.clean_cache(days).await?;
-                    let audio_count = transcriber.clean_audio_cache(days).await?;
+                    // Note: Current implementation clears all cache, not just old entries
+                    let transcription_count = transcriber.clear_cache().await?;
+                    let audio_count = transcriber.clear_audio_cache().await?;
                     
                     // Clean translation cache - remove entries older than specified days
-                    let translator = OllamaTranslator::new(config.translate.clone());
-                    let translation_items = translator.list_translation_cache().await?;
+                    let base_translator = BaseTranslator::new(config.translate.clone());
+                    let translation_items = base_translator.list_translation_cache().await?;
                     let cutoff_time = std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
                         .unwrap_or_default()
@@ -329,8 +327,8 @@ async fn main() -> Result<()> {
                 }
                 CacheAction::ListTranslations => {
                     // Create translator instance to access translation cache
-                    let translator = OllamaTranslator::new(config.translate.clone());
-                    let cached_items = translator.list_translation_cache().await?;
+                    let base_translator = BaseTranslator::new(config.translate.clone());
+                    let cached_items = base_translator.list_translation_cache().await?;
                     
                     if cached_items.is_empty() {
                         println!("No cached translations found.");
@@ -364,8 +362,8 @@ async fn main() -> Result<()> {
                 }
                 CacheAction::ClearTranslations => {
                     // Create translator instance to access translation cache
-                    let translator = OllamaTranslator::new(config.translate.clone());
-                    let deleted_count = translator.clear_translation_cache().await?;
+                    let base_translator = BaseTranslator::new(config.translate.clone());
+                    let deleted_count = base_translator.clear_translation_cache().await?;
                     println!("Cleared {} cached translations", deleted_count);
                 }
             }

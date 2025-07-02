@@ -9,7 +9,7 @@ pub mod workflow;
 pub mod whisper;
 pub mod translate;
 pub mod subtitle;
-pub mod ffmpeg;
+pub mod media;
 pub mod error;
 pub mod quality;
 pub mod setup; 

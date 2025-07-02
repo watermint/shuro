@@ -7,7 +7,7 @@ pub struct Config {
     pub whisper: WhisperConfig,
     pub translate: TranslateConfig,
     pub quality: QualityConfig,
-    pub ffmpeg: FFmpegConfig,
+    pub media: MediaConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -69,7 +69,7 @@ pub struct QualityConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FFmpegConfig {
+pub struct MediaConfig {
     /// Path to ffmpeg binary
     pub binary_path: String,
     /// Additional encoding options for subtitle embedding
@@ -107,7 +107,7 @@ impl Default for Config {
                 max_tokens_threshold: 50.0,
                 min_quality_score: 0.7,
             },
-            ffmpeg: FFmpegConfig {
+            media: MediaConfig {
                 binary_path: "ffmpeg".to_string(),
                 subtitle_options: vec![
                     // Example encoding options users can customize:

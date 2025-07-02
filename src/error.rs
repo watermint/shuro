@@ -20,8 +20,8 @@ pub enum ShuroError {
     #[error("Translation error: {0}")]
     Translation(String),
 
-    #[error("FFmpeg error: {0}")]
-    FFmpeg(String),
+    #[error("Media processing error: {0}")]
+    Media(String),
 
     #[error("Quality validation error: {0}")]
     Quality(String),
@@ -37,6 +37,9 @@ pub enum ShuroError {
 
     #[error("Unsupported format: {0}")]
     UnsupportedFormat(String),
+
+    #[error("Cache error: {0}")]
+    Cache(String),
 }
 
 pub type Result<T> = std::result::Result<T, ShuroError>; 

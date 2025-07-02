@@ -1,0 +1,236 @@
+use std::path::Path;
+use std::process::Command;
+use serde::{Serialize, Deserialize};
+use tracing::info;
+
+use crate::error::{Result, ShuroError};
+use crate::quality::Transcription;
+
+#[derive(Debug)]
+pub struct TuneParams {
+    pub tempo: i32,
+    pub model: String,
+    pub temperature: f32,
+}
+
+#[derive(Debug)]
+pub struct TuneResult {
+    pub best_transcription: Transcription,
+    pub best_tempo: i32,
+    pub best_temperature: f32,
+    pub quality_score: f64,
+    pub all_attempts: Vec<(i32, f64)>, // (tempo, quality_score)
+    pub tested_parameters: Vec<String>, // Description of tested parameters
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TranscriptionCache {
+    pub transcription: Transcription,
+    pub model: String,
+    pub temperature: f32,
+    pub language: Option<String>,
+    pub audio_path: String,
+    pub audio_modified: Option<u64>, // File modification time
+    pub cached_at: u64, // Unix timestamp
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AudioCache {
+    pub audio_path: String,
+    pub video_path: String,
+    pub video_modified: Option<u64>,
+    pub cached_at: u64,
+}
+
+#[derive(Debug)]
+pub struct CacheInfo {
+    pub total_files: u64,
+    pub total_size: u64,
+    pub oldest_entry: Option<u64>,
+    pub newest_entry: Option<u64>,
+    pub models_used: Vec<String>,
+    pub audio_files: u64,
+    pub audio_size: u64,
+}
+
+/// Base utilities for whisper implementations
+pub struct WhisperUtils;
+
+impl WhisperUtils {
+    /// Format duration in seconds to a human-readable string
+    pub fn format_duration(seconds: u64) -> String {
+        let days = seconds / (24 * 60 * 60);
+        let hours = (seconds % (24 * 60 * 60)) / (60 * 60);
+        let minutes = (seconds % (60 * 60)) / 60;
+        let secs = seconds % 60;
+
+        if days > 0 {
+            format!("{}d {}h", days, hours)
+        } else if hours > 0 {
+            format!("{}h {}m", hours, minutes)
+        } else if minutes > 0 {
+            format!("{}m {}s", minutes, secs)
+        } else {
+            format!("{}s", secs)
+        }
+    }
+
+    /// Generate file hash for caching
+    pub fn generate_file_hash<P: AsRef<Path>>(path: P, additional_data: &[&str]) -> Result<String> {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+        
+        let path = path.as_ref();
+        
+        // Get file metadata
+        let metadata = std::fs::metadata(path)
+            .map_err(|e| ShuroError::Whisper(format!("Failed to read file metadata: {}", e)))?;
+        
+        let modified = metadata.modified()
+            .map_err(|e| ShuroError::Whisper(format!("Failed to get modification time: {}", e)))?
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        
+        // Create hash input
+        let mut hasher = DefaultHasher::new();
+        path.to_string_lossy().hash(&mut hasher);
+        modified.hash(&mut hasher);
+        
+        for data in additional_data {
+            data.hash(&mut hasher);
+        }
+        
+        let hash = hasher.finish();
+        Ok(format!("{:016x}", hash))
+    }
+
+    /// Check if directory exists and create if not
+    pub async fn ensure_directory<P: AsRef<Path>>(path: P) -> Result<()> {
+        tokio::fs::create_dir_all(path).await
+            .map_err(|e| ShuroError::Whisper(format!("Failed to create directory: {}", e)))?;
+        Ok(())
+    }
+
+    /// Get file size
+    pub fn get_file_size<P: AsRef<Path>>(path: P) -> Result<u64> {
+        let metadata = std::fs::metadata(path)
+            .map_err(|e| ShuroError::Whisper(format!("Failed to read file metadata: {}", e)))?;
+        Ok(metadata.len())
+    }
+
+    /// Clean old cache entries based on age
+    pub async fn clean_cache_by_age<P: AsRef<Path>>(
+        cache_dir: P,
+        max_age_days: u64,
+        file_extension: &str,
+    ) -> Result<u64> {
+        let cache_dir = cache_dir.as_ref();
+        let max_age_seconds = max_age_days * 24 * 60 * 60;
+        let current_time = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        
+        let mut removed_count = 0;
+        
+        if let Ok(mut entries) = tokio::fs::read_dir(cache_dir).await {
+            while let Ok(Some(entry)) = entries.next_entry().await {
+                if let Some(extension) = entry.path().extension() {
+                    if extension == file_extension {
+                        if let Ok(metadata) = entry.metadata().await {
+                            if let Ok(modified) = metadata.modified() {
+                                if let Ok(duration) = modified.duration_since(std::time::UNIX_EPOCH) {
+                                    let age_seconds = current_time.saturating_sub(duration.as_secs());
+                                    if age_seconds > max_age_seconds {
+                                        if tokio::fs::remove_file(entry.path()).await.is_ok() {
+                                            removed_count += 1;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        Ok(removed_count)
+    }
+
+    /// Get cache statistics
+    pub async fn get_cache_stats<P: AsRef<Path>>(
+        cache_dir: P,
+        file_extension: &str,
+    ) -> Result<(u64, u64, Option<u64>, Option<u64>)> {
+        let cache_dir = cache_dir.as_ref();
+        let mut total_files = 0;
+        let mut total_size = 0;
+        let mut oldest_entry: Option<u64> = None;
+        let mut newest_entry: Option<u64> = None;
+        
+        if let Ok(mut entries) = tokio::fs::read_dir(cache_dir).await {
+            while let Ok(Some(entry)) = entries.next_entry().await {
+                if let Some(extension) = entry.path().extension() {
+                    if extension == file_extension {
+                        total_files += 1;
+                        
+                        if let Ok(metadata) = entry.metadata().await {
+                            total_size += metadata.len();
+                            
+                            if let Ok(modified) = metadata.modified() {
+                                if let Ok(duration) = modified.duration_since(std::time::UNIX_EPOCH) {
+                                    let timestamp = duration.as_secs();
+                                    
+                                    oldest_entry = Some(oldest_entry.map_or(timestamp, |o| o.min(timestamp)));
+                                    newest_entry = Some(newest_entry.map_or(timestamp, |n| n.max(timestamp)));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        Ok((total_files, total_size, oldest_entry, newest_entry))
+    }
+}
+
+/// Extract audio from video using ffmpeg
+pub async fn extract_audio<P: AsRef<Path>>(
+    video_path: P,
+    audio_path: P,
+    ffmpeg_path: &str,
+) -> Result<()> {
+    let video_path = video_path.as_ref();
+    let audio_path = audio_path.as_ref();
+
+    info!("Extracting audio from {} to {}", video_path.display(), audio_path.display());
+
+    let output = Command::new(ffmpeg_path)
+        .arg("-i").arg(video_path)
+        .arg("-vn") // No video
+        .arg("-acodec").arg("pcm_s16le") // PCM 16-bit for whisper
+        .arg("-ar").arg("16000") // 16kHz sample rate
+        .arg("-ac").arg("1") // Mono
+        .arg("-y") // Overwrite output
+        .arg(audio_path)
+        .output()
+        .map_err(|e| ShuroError::Whisper(format!("Failed to execute ffmpeg: {}", e)))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(ShuroError::Whisper(format!(
+            "Audio extraction failed: {}",
+            stderr
+        )));
+    }
+
+    info!("Audio extraction completed");
+    Ok(())
+}
+
+/// Format duration in seconds to a human-readable string
+pub fn format_duration(seconds: u64) -> String {
+    WhisperUtils::format_duration(seconds)
+} 
