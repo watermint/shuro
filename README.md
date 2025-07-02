@@ -5,7 +5,9 @@ An automated workflow for adding translated subtitles to movie files using whisp
 ## Features
 
 - **Hallucination Detection**: Automatically detects and retries transcriptions with hallucinated content
-- **Tempo Tuning**: Optimizes audio speed to minimize transcription errors
+- **Two Transcription Modes**: 
+  - **Simple**: Fast transcription with good quality using default settings
+  - **Tuned**: Optimizes audio speed using a smaller model first to find the most smooth segments, then transcribes with the best settings
 - **LLM Translation**: Uses local LLM (Ollama) for high-quality translations with validation
 - **Quality Assurance**: Validates both transcription and translation quality before proceeding
 - **Batch Processing**: Process single files or entire directories
@@ -64,11 +66,17 @@ An automated workflow for adding translated subtitles to movie files using whisp
 ### Basic Commands
 
 ```bash
-# Process a single video file
+# Process a single video file with simple transcription (default)
 ./target/release/shuro process -i video.mp4 -t "ja,ko" -o output/
 
-# Process all videos in a directory
-./target/release/shuro batch -i videos/ -t "ja" -o output/
+# Process with tuned transcription mode (finds optimal audio speed first)
+./target/release/shuro process -i video.mp4 -t "ja,ko" -o output/ --transcription-mode tuned
+
+# Process all videos in a directory with tuned transcription
+./target/release/shuro batch -i videos/ -t "ja" -o output/ --transcription-mode tuned
+
+# Use different translation modes
+./target/release/shuro process -i video.mp4 -t "ja" --translation-mode context
 
 # Use custom configuration
 ./target/release/shuro -c my-config.toml process -i video.mp4 -t "ja"
@@ -85,8 +93,11 @@ You can also run individual steps:
 # 1. Extract audio from video
 ./target/release/shuro extract -i video.mp4 -o audio.wav
 
-# 2. Transcribe with hallucination detection
+# 2. Transcribe with simple mode (default)
 ./target/release/shuro transcribe -i audio.wav -o transcript.json
+
+# 2. Transcribe with tuned mode (finds optimal speed first)
+./target/release/shuro transcribe -i audio.wav -o transcript.json --transcription-mode tuned
 
 # 3. Translate transcription
 ./target/release/shuro translate -i transcript.json -o translated.json -t "ja"
@@ -100,28 +111,40 @@ You can also run individual steps:
 Create a `config.toml` file to customize behavior:
 
 ```toml
-[whisper]
-binary_path = "/path/to/whisper"
+[transcriber]
+binary_path = "whisper"
+# Transcription mode: "simple" (default) or "tuned"
+mode = "simple"
+# Model for exploration phase (when mode = "tuned")
 explore_model = "base"
-transcribe_model = "large-v3"
+# Model for final transcription
+transcribe_model = "medium"
+# Tempo exploration settings (when mode = "tuned")
 explore_steps = 5
 explore_range_max = 120
 explore_range_min = 80
+# Acceptable languages
+acceptable_languages = "en,ja,ko,zh,fr,de,es,ru,it,pt"
+fallback_language = "en"
+temperature = 0.0
 
 [translate]
-ollama_endpoint = "http://localhost:11434"
+endpoint = "http://localhost:11434"
 model = "llama3.2:3b"
-quality_threshold = "good"
+# Translation mode: "simple", "context", or "nlp"
+mode = "simple"
 max_retries = 3
+context_window_size = 2
+nlp_gap_threshold = 2.0
 
 [quality]
 repetitive_segment_threshold = 0.8
 max_tokens_threshold = 50.0
 min_quality_score = 0.7
 
-[ffmpeg]
+[media]
 binary_path = "ffmpeg"
-subtitle_options = ["-c:v", "copy", "-c:a", "copy"]
+subtitle_options = []
 ```
 
 ### Model Management
@@ -161,11 +184,14 @@ When you run any processing command, Shuro will automatically check for the requ
 ## How It Works
 
 1. **Audio Extraction**: Uses FFmpeg to extract audio from video files
-2. **Transcription Tuning**: 
-   - Tests different audio speeds (80-120%) with a fast model
-   - Detects hallucinations and repetitive content
-   - Selects optimal parameters for final transcription
-3. **Quality Transcription**: Uses a high-quality model with optimized parameters
+2. **Transcription**: Two modes available:
+   - **Simple Mode**: Direct transcription with configured model and settings (faster)
+   - **Tuned Mode**: 
+     - Tests different audio speeds (configurable range, e.g., 80-120%) with a smaller exploration model
+     - Calculates segment smoothness (how evenly distributed segment lengths are)
+     - Selects the tempo that produces the most evenly distributed segments
+     - Performs final transcription using the optimal tempo with the full quality model
+3. **Quality Validation**: Detects hallucinations, repetitive content, and validates transcription quality
 4. **Translation**: 
    - Translates each segment using local LLM
    - Validates translation quality

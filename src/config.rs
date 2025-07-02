@@ -14,6 +14,8 @@ pub struct Config {
 pub struct TranscriberConfig {
     /// Path to transcriber binary (e.g., whisper-cli)
     pub binary_path: String,
+    /// Transcription mode: Simple or Tuned
+    pub mode: TranscriptionMode,
     /// Model to use for exploration phase
     pub explore_model: String,
     /// Model to use for transcription
@@ -30,6 +32,14 @@ pub struct TranscriberConfig {
     pub explore_range_min: i32,
     /// Temperature for transcription
     pub temperature: f32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum TranscriptionMode {
+    /// Simple: Use default settings without tempo optimization
+    Simple,
+    /// Tuned: Find optimal tempo using smaller model first, then transcribe with best tempo
+    Tuned,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -85,6 +95,7 @@ impl Default for Config {
         Self {
             transcriber: TranscriberConfig {
                 binary_path: "whisper-cli".to_string(),
+                mode: TranscriptionMode::Tuned,
                 explore_model: "base".to_string(),
                 transcribe_model: "medium".to_string(),
                 acceptable_languages: "en,ja,ko,zh,fr,de,es,ru,it,pt,pl,nl,tr,ar,hi,th,vi,sv,da,no,fi,he,hu,cs,sk,bg,hr,sl,et,lv,lt,mt,ga,cy,eu,ca,gl,is,mk,sq,be,uk,az,kk,ky,uz,tg,am,ka,hy,ne,si,my,km,lo,ka,gu,pa,ta,te,kn,ml,bn,as,or,mr".to_string(),

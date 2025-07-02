@@ -10,7 +10,7 @@ use tracing::{info, Level};
 use tracing_subscriber::FmtSubscriber;
 
 use shuro::cli::{Args, Commands, CacheAction};
-use shuro::config::{Config, TranslationMode};
+use shuro::config::{Config, TranslationMode, TranscriptionMode};
 use shuro::setup::SetupManager;
 use shuro::workflow::Workflow;
 use shuro::quality::QualityValidator;
@@ -368,12 +368,16 @@ async fn main() -> Result<()> {
                 }
             }
         }
-        Commands::Process { input, target_langs, output_dir, translation_mode } => {
+        Commands::Process { input, target_langs, output_dir, translation_mode, transcription_mode } => {
             info!("Processing video file: {}", input.display());
             
             // Parse translation mode
-            let mode = parse_translation_mode(&translation_mode)?;
-            config.translate.mode = mode;
+            let translation_mode = parse_translation_mode(&translation_mode)?;
+            config.translate.mode = translation_mode;
+            
+            // Parse transcription mode
+            let transcription_mode = parse_transcription_mode(&transcription_mode)?;
+            config.transcriber.mode = transcription_mode;
             
             let target_languages = target_langs
                 .split(',')
@@ -384,12 +388,16 @@ async fn main() -> Result<()> {
             let workflow = Workflow::new(config)?;
             workflow.process_single_file(&input, &target_languages, output_dir.as_ref()).await?;
         }
-        Commands::Batch { input_dir, target_langs, output_dir, translation_mode } => {
+        Commands::Batch { input_dir, target_langs, output_dir, translation_mode, transcription_mode } => {
             info!("Processing directory: {}", input_dir.display());
             
             // Parse translation mode
-            let mode = parse_translation_mode(&translation_mode)?;
-            config.translate.mode = mode;
+            let translation_mode = parse_translation_mode(&translation_mode)?;
+            config.translate.mode = translation_mode;
+            
+            // Parse transcription mode
+            let transcription_mode = parse_transcription_mode(&transcription_mode)?;
+            config.transcriber.mode = transcription_mode;
             
             let target_languages = target_langs
                 .split(',')
@@ -404,8 +412,15 @@ async fn main() -> Result<()> {
             info!("Extracting audio from: {}", input.display());
             workflow.extract_audio(&input, &output).await?;
         }
-        Commands::Transcribe { input, output, language } => {
+        Commands::Transcribe { input, output, language, transcription_mode } => {
             info!("Transcribing audio: {}", input.display());
+            
+            // Parse transcription mode
+            let transcription_mode = parse_transcription_mode(&transcription_mode)?;
+            config.transcriber.mode = transcription_mode;
+            
+            // Create new workflow with updated config
+            let workflow = Workflow::new(config)?;
             workflow.transcribe_audio(&input, &output, language.as_deref()).await?;
         }
         Commands::Translate { input, output, target_langs } => {
@@ -436,6 +451,18 @@ fn format_duration(seconds: u64) -> String {
         format!("{}m {}s", seconds / 60, seconds % 60)
     } else {
         format!("{}h {}m", seconds / 3600, (seconds % 3600) / 60)
+    }
+}
+
+/// Parse transcription mode from string
+fn parse_transcription_mode(mode: &str) -> Result<TranscriptionMode> {
+    match mode.to_lowercase().as_str() {
+        "simple" => Ok(TranscriptionMode::Simple),
+        "tuned" => Ok(TranscriptionMode::Tuned),
+        _ => Err(ShuroError::Config(format!(
+            "Invalid transcription mode '{}'. Valid modes: simple, tuned", 
+            mode
+        )).into()),
     }
 }
 

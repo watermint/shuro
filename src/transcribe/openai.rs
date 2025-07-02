@@ -9,7 +9,7 @@ use serde::{Serialize, Deserialize};
 use tracing::{info, debug};
 use tempfile;
 
-use crate::config::TranscriberConfig;
+use crate::config::{TranscriberConfig, TranscriptionMode};
 use crate::error::{Result, ShuroError};
 use crate::quality::{Transcription, QualityValidator};
 use super::{TranscriberTrait, TuneResult, TranscriptionCache, AudioCache, CacheInfo, common::{WhisperUtils, AbstractTranscription, AbstractTranscriptionSegment, TranscriptionMapper}};
@@ -182,16 +182,9 @@ impl OpenAITranscriber {
         // Convert to legacy format for compatibility
         Ok(OpenAIWhisperMapper::to_legacy_transcription(abstract_transcription))
     }
-}
 
-#[async_trait]
-impl TranscriberTrait for OpenAITranscriber {
-    async fn transcribe(&self, audio_path: &Path, language: Option<&str>) -> Result<Transcription> {
-        info!("Starting OpenAI Whisper transcription of: {}", audio_path.display());
-        
-        // Check availability first
-        Self::check_availability().await?;
-
+    /// Simple transcription with caching - the original transcribe logic
+    async fn transcribe_simple(&self, audio_path: &Path, language: Option<&str>) -> Result<Transcription> {
         // Generate cache key
         let cache_key = WhisperUtils::generate_file_hash(
             audio_path,
@@ -236,7 +229,8 @@ impl TranscriberTrait for OpenAITranscriber {
         Ok(transcription)
     }
 
-    async fn tune_transcription(&self, audio_path: &Path) -> Result<TuneResult> {
+    /// Internal tuning logic - the original tune_transcription logic
+    async fn tune_transcription_internal(&self, audio_path: &Path, language: Option<&str>) -> Result<TuneResult> {
         info!("Tuning OpenAI Whisper transcription for: {}", audio_path.display());
         
         // Test different temperatures
@@ -248,7 +242,7 @@ impl TranscriberTrait for OpenAITranscriber {
             let transcription = self.execute_transcription(
                 audio_path,
                 &self.config.transcribe_model,
-                None,
+                language,
                 temp,
             ).await?;
 
@@ -265,7 +259,7 @@ impl TranscriberTrait for OpenAITranscriber {
             best_transcription: self.execute_transcription(
                 audio_path,
                 &self.config.transcribe_model,
-                None,
+                language,
                 best_temperature,
             ).await?,
             best_tempo: 100, // Not applicable for OpenAI Whisper
@@ -274,6 +268,62 @@ impl TranscriberTrait for OpenAITranscriber {
             all_attempts: results.iter().map(|(t, s)| ((*t * 10.0) as i32, *s)).collect(), // Convert temperature to tempo-like format
             tested_parameters: results.into_iter().map(|(t, s)| format!("temp={:.1}->score={:.3}", t, s)).collect(),
         })
+    }
+}
+
+#[async_trait]
+impl TranscriberTrait for OpenAITranscriber {
+    async fn transcribe(&self, audio_path: &Path, language: Option<&str>) -> Result<Transcription> {
+        use crate::config::TranscriptionMode;
+        
+        info!("Starting OpenAI Whisper transcription of: {}", audio_path.display());
+        
+        // Check availability first
+        Self::check_availability().await?;
+
+        match self.config.mode {
+            TranscriptionMode::Simple => {
+                info!("Using simple transcription mode");
+                self.transcribe_simple(audio_path, language).await
+            }
+            TranscriptionMode::Tuned => {
+                info!("Using tuned transcription mode");
+                // For tuned mode with OpenAI, we tune temperature instead of tempo
+                // Since this method expects audio path, we'll do a simplified tuning
+                let tune_result = self.tune_transcription_internal(audio_path, language).await?;
+                Ok(tune_result.best_transcription)
+            }
+        }
+    }
+
+    async fn tune_transcription(&self, video_path: &Path) -> Result<TuneResult> {
+        use crate::config::TranscriptionMode;
+        
+        match self.config.mode {
+            TranscriptionMode::Simple => {
+                info!("Simple mode tune: single transcription pass");
+                
+                // Extract audio first
+                let audio_path = self.extract_and_cache_audio(video_path).await?;
+                let transcription = self.transcribe_simple(&audio_path, None).await?;
+                
+                Ok(TuneResult {
+                    best_transcription: transcription,
+                    best_tempo: 100,
+                    best_temperature: self.config.temperature,
+                    quality_score: 1.0, // Assume reasonable quality for simple mode
+                    all_attempts: vec![(100, 1.0)],
+                    tested_parameters: vec!["simple-mode-single-pass".to_string()],
+                })
+            }
+            TranscriptionMode::Tuned => {
+                info!("Tuned mode: exploring optimal temperature");
+                
+                // Extract audio first
+                let audio_path = self.extract_and_cache_audio(video_path).await?;
+                self.tune_transcription_internal(&audio_path, None).await
+            }
+        }
     }
 
     async fn extract_and_cache_audio(&self, video_path: &Path) -> Result<PathBuf> {

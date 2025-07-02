@@ -35,6 +35,10 @@ pub enum Commands {
         /// Translation optimization mode
         #[arg(long, default_value = "simple")]
         translation_mode: String,
+
+        /// Transcription mode (simple, tuned)
+        #[arg(long, default_value = "simple")]
+        transcription_mode: String,
     },
 
     /// Process all video files in a directory
@@ -54,6 +58,10 @@ pub enum Commands {
         /// Translation optimization mode
         #[arg(long, default_value = "simple")]
         translation_mode: String,
+
+        /// Transcription mode (simple, tuned)
+        #[arg(long, default_value = "simple")]
+        transcription_mode: String,
     },
 
     /// List available whisper models and their status
@@ -93,6 +101,10 @@ pub enum Commands {
         /// Source language hint
         #[arg(short, long)]
         language: Option<String>,
+
+        /// Transcription mode (simple, tuned)
+        #[arg(long, default_value = "simple")]
+        transcription_mode: String,
     },
 
     /// Translate subtitles using LLM

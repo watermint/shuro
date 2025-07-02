@@ -1,0 +1,83 @@
+# Shuro Configuration Example
+# Copy this file to config.toml and customize as needed
+
+[transcriber]
+# Path to transcriber binary 
+# Use "whisper-cpp" for the C++ implementation (recommended for tuned mode)
+# Use "whisper" for the Python implementation (simple mode only)
+binary_path = "whisper-cpp"
+
+# Transcription mode:
+# - "Simple": Use default settings without tempo optimization (faster, good quality)
+# - "Tuned": Find optimal audio speed using smaller model first, then transcribe (default, potentially better quality)
+# Note: Tuned mode requires whisper-cpp binary
+mode = "Tuned"
+
+# Model to use for exploration phase (when mode = "Tuned")
+# Smaller models are faster for finding optimal tempo
+# Options: tiny, base, small, medium, large, large-v2, large-v3
+explore_model = "base"
+
+# Model to use for final transcription
+# Larger models generally provide better accuracy
+transcribe_model = "medium"
+
+# Acceptable source languages (comma-separated)
+acceptable_languages = "en,ja,ko,zh,fr,de,es,ru,it,pt,pl,nl,tr,ar,hi,th,vi,sv,da,no,fi,he,hu,cs,sk,bg,hr,sl,et,lv,lt,mt,ga,cy,eu,ca,gl,is,mk,sq,be,uk,az,kk,ky,uz,tg,am,ka,hy,ne,si,my,km,lo,ka,gu,pa,ta,te,kn,ml,bn,as,or,mr"
+
+# Fallback language when detection fails
+fallback_language = "en"
+
+# Number of tempo values to test (when mode = "Tuned")
+# More steps = more thorough but slower
+explore_steps = 5
+
+# Tempo range for exploration (when mode = "Tuned")
+# Tests audio speeds from explore_range_min% to explore_range_max%
+# Example: 80-120 tests 80%, 90%, 100%, 110%, 120%
+explore_range_max = 120
+explore_range_min = 80
+
+# Temperature for transcription (0.0 = deterministic, 1.0 = creative)
+temperature = 0.0
+
+[translate]
+# Ollama endpoint URL
+endpoint = "http://localhost:11434"
+
+# LLM model to use for translation
+model = "llama3.2:3b"
+
+# Maximum retries for failed translations
+max_retries = 3
+
+# Translation optimization mode:
+# - "Simple": Translate each segment individually
+# - "Context": Use surrounding segments as context
+# - "Nlp": Reconstruct complete sentences first
+mode = "Simple"
+
+# Minimum gap between segments (seconds) to trigger hard stop in NLP mode
+nlp_gap_threshold = 2.0
+
+# Maximum context window size for context mode
+context_window_size = 2
+
+[quality]
+# Quality validation thresholds
+repetitive_segment_threshold = 0.8
+max_tokens_threshold = 50.0
+min_quality_score = 0.7
+
+[media]
+# Path to ffmpeg binary
+binary_path = "ffmpeg"
+
+# Additional encoding options for subtitle embedding
+# Uncomment and customize as needed:
+# subtitle_options = [
+#     "-preset", "medium",    # Encoding speed (ultrafast, fast, medium, slow, veryslow)
+#     "-crf", "23",          # Quality (0-51, lower = better quality, 23 is default)
+#     "-pix_fmt", "yuv420p"  # Pixel format for compatibility
+# ]
+subtitle_options = [] 

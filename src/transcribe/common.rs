@@ -285,6 +285,101 @@ pub async fn extract_audio<P: AsRef<Path>>(
     Ok(())
 }
 
+/// Extract audio with specific tempo adjustment using ffmpeg
+pub async fn extract_audio_with_tempo<P: AsRef<Path>>(
+    video_path: P,
+    audio_path: P,
+    ffmpeg_path: &str,
+    tempo_percentage: i32,
+) -> Result<()> {
+    let video_path = video_path.as_ref();
+    let audio_path = audio_path.as_ref();
+
+    info!("Extracting audio from {} to {} with tempo {}%", 
+          video_path.display(), audio_path.display(), tempo_percentage);
+
+    // Convert percentage to ffmpeg atempo value (e.g., 110% -> 1.1, 80% -> 0.8)
+    let tempo_factor = tempo_percentage as f64 / 100.0;
+    
+    let output = Command::new(ffmpeg_path)
+        .arg("-i").arg(video_path)
+        .arg("-vn") // No video
+        .arg("-acodec").arg("pcm_s16le") // PCM 16-bit for whisper
+        .arg("-ar").arg("16000") // 16kHz sample rate
+        .arg("-ac").arg("1") // Mono
+        .arg("-af").arg(format!("atempo={}", tempo_factor)) // Apply tempo adjustment
+        .arg("-y") // Overwrite output
+        .arg(audio_path)
+        .output()
+        .map_err(|e| ShuroError::Transcriber(format!("Failed to execute ffmpeg: {}", e)))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(ShuroError::Transcriber(format!(
+            "Audio extraction with tempo adjustment failed: {}",
+            stderr
+        )));
+    }
+
+    info!("Audio extraction with tempo adjustment completed");
+    Ok(())
+}
+
+/// Calculate segment smoothness score - lower score means more evenly distributed segments
+pub fn calculate_segment_smoothness(transcription: &Transcription) -> f64 {
+    if transcription.segments.len() < 2 {
+        return f64::MAX; // Single or no segments are considered poor quality
+    }
+
+    // Calculate segment durations
+    let mut durations: Vec<f64> = Vec::new();
+    for segment in &transcription.segments {
+        let duration = segment.end - segment.start;
+        if duration > 0.0 {
+            durations.push(duration);
+        }
+    }
+
+    if durations.is_empty() {
+        return f64::MAX;
+    }
+
+    // Calculate mean duration
+    let mean_duration: f64 = durations.iter().sum::<f64>() / durations.len() as f64;
+    
+    // Calculate coefficient of variation (standard deviation / mean)
+    // Lower CV means more evenly distributed segments
+    let variance: f64 = durations.iter()
+        .map(|&duration| {
+            let diff = duration - mean_duration;
+            diff * diff
+        })
+        .sum::<f64>() / durations.len() as f64;
+    
+    let std_deviation = variance.sqrt();
+    
+    // Return coefficient of variation - lower is better
+    if mean_duration > 0.0 {
+        std_deviation / mean_duration
+    } else {
+        f64::MAX
+    }
+}
+
+/// Generate tempo test range based on configuration
+pub fn generate_tempo_range(min_tempo: i32, max_tempo: i32, steps: i32) -> Vec<i32> {
+    if steps <= 1 {
+        return vec![100]; // Default tempo if invalid steps
+    }
+    
+    let range = max_tempo - min_tempo;
+    let step_size = range as f64 / (steps - 1) as f64;
+    
+    (0..steps)
+        .map(|i| min_tempo + (i as f64 * step_size).round() as i32)
+        .collect()
+}
+
 /// Format duration in seconds to a human-readable string
 pub fn format_duration(seconds: u64) -> String {
     WhisperUtils::format_duration(seconds)
