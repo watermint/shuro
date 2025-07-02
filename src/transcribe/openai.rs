@@ -9,7 +9,7 @@ use serde::{Serialize, Deserialize};
 use tracing::{info, debug};
 use tempfile;
 
-use crate::config::{TranscriberConfig, TranscriptionMode};
+use crate::config::TranscriberConfig;
 use crate::error::{Result, ShuroError};
 use crate::quality::{Transcription, QualityValidator};
 use super::{TranscriberTrait, TuneResult, TranscriptionCache, AudioCache, CacheInfo, common::{WhisperUtils, AbstractTranscription, AbstractTranscriptionSegment, TranscriptionMapper}};
@@ -328,14 +328,23 @@ impl TranscriberTrait for OpenAITranscriber {
 
     async fn extract_and_cache_audio(&self, video_path: &Path) -> Result<PathBuf> {
         // Use the common audio extraction functionality
-        let cache_key = WhisperUtils::generate_file_hash(video_path, &[])?;
+        let cache_key = WhisperUtils::generate_file_hash(video_path, &["audio_extraction"])?;
         let audio_path = self.audio_cache_dir.join(format!("{}.wav", cache_key));
 
         if !audio_path.exists() {
-            // Extract audio using ffmpeg (placeholder - would need actual implementation)
+            // Create cache directory if needed
             std::fs::create_dir_all(&self.audio_cache_dir)
                 .map_err(|e| ShuroError::Cache(format!("Failed to create audio cache directory: {}", e)))?;
-            // TODO: Implement actual audio extraction
+
+            // Extract audio using the common function with proper original file name logging
+            let original_name = video_path.file_name()
+                .and_then(|n| n.to_str());
+            super::common::extract_audio(video_path, &audio_path, "ffmpeg", original_name).await?;
+        } else {
+            let original_name = video_path.file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("unknown");
+            info!("Using cached audio for: {}", original_name);
         }
 
         Ok(audio_path)

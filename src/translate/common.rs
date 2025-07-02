@@ -167,27 +167,37 @@ impl BaseTranslator {
         context: &str,
         target_language: &str,
     ) -> Result<TranslationQuality> {
+        let language_name = self.language_code_to_name(target_language);
+        
         let quality_prompt = format!(
-            "You are a professional translator.\n\
-             Evaluate the following translation quality into {}.\n\
+            "You are a professional translation quality evaluator.\n\
+             \n\
+             Evaluate the translation quality from English to {} ({}).\n\
+             \n\
+             IMPORTANT CRITERIA:\n\
+             1. The translation must be in {} language ONLY\n\
+             2. The translation must accurately convey the meaning of the source text\n\
+             3. The translation must be grammatically correct in {}\n\
+             4. The translation must be natural and fluent in {}\n\
              \n\
              Evaluate translation quality in one of the following levels:\n\
-             - [PERFECT]: The translation is perfect and no further improvement is needed.\n\
-             - [GOOD]: The translation is good but some minor improvements are needed.\n\
-             - [BAD]: The translation is bad and needs to be re-translated.\n\
-             - [INVALID]: The translation is invalid or not related to the source.\n\
+             - [PERFECT]: The translation is perfect, in correct language, and no further improvement is needed.\n\
+             - [GOOD]: The translation is good and in correct language, but some minor improvements are needed.\n\
+             - [BAD]: The translation is bad, incorrect, or needs to be re-translated.\n\
+             - [INVALID]: The translation is in wrong language, invalid, or not related to the source.\n\
              \n\
              Please return the evaluation results in JSON format as {{\"evaluation\":\"evaluation result\"}}.\n\
              \n\
-             [Source]\n\
+             [Source (English)]\n\
              {}\n\
              \n\
-             [Translation]\n\
+             [Translation (should be in {})]\n\
              {}\n\
              \n\
              [Context]\n\
              {}",
-            target_language, original, translation, context
+            language_name, target_language, language_name, language_name, language_name, 
+            original, language_name, translation, context
         );
 
         let request = TranslationRequest {
@@ -233,25 +243,35 @@ impl BaseTranslator {
 
     /// Build translation prompt with context, using JSON format
     fn build_translation_prompt(&self, text: &str, target_language: &str, context: Option<&str>) -> String {
+        let language_name = self.language_code_to_name(target_language);
+        
         if text.len() < 50 {
             format!(
                 "You are a professional translator.\n\
-                 Translate the following text to {}.\n\
-                 Return ONLY the translation in JSON format as {{\"text\":\"translated text\"}}.\n\
+                 \n\
+                 CRITICAL: You must translate the text to {} ONLY. Do not translate to any other language.\n\
+                 The target language is: {} (language code: {})\n\
+                 \n\
+                 Return ONLY the translation in JSON format as {{\"text\":\"your {} translation here\"}}.\n\
+                 Do not include any explanations, alternatives, or text in other languages.\n\
                  \n\
                  Text to translate: \"{}\"\n",
-                target_language, text
+                language_name, language_name, target_language, language_name, text
             )
         } else {
             let mut prompt = format!(
                 "You are a professional translator.\n\
-                 Translate the following text to {}.\n\
-                 Return ONLY the translation in JSON format as {{\"text\":\"translated text\"}}.\n\
+                 \n\
+                 CRITICAL: You must translate the text to {} ONLY. Do not translate to any other language.\n\
+                 The target language is: {} (language code: {})\n\
+                 \n\
+                 Return ONLY the translation in JSON format as {{\"text\":\"your {} translation here\"}}.\n\
+                 Do not include any explanations, alternatives, or text in other languages.\n\
                  \n\
                  [Text to translate]\n\
                  {}\n\
                  \n",
-                target_language, text
+                language_name, language_name, target_language, language_name, text
             );
             
             if let Some(ctx) = context {
@@ -259,13 +279,85 @@ impl BaseTranslator {
                     prompt.push_str(&format!(
                         "[Context for reference - DO NOT translate this part]\n\
                          {}\n\n\
-                         Remember: Only translate the text in the [Text to translate] section above.\n",
-                        ctx
+                         Remember: Only translate the text in the [Text to translate] section above to {}.\n",
+                        ctx, language_name
                     ));
                 }
             }
             
             prompt
+        }
+    }
+
+    /// Convert language code to full language name for clearer prompts
+    fn language_code_to_name(&self, code: &str) -> String {
+        match code.to_lowercase().as_str() {
+            "ja" => "Japanese".to_string(),
+            "ko" => "Korean".to_string(), 
+            "zh" => "Chinese".to_string(),
+            "fr" => "French".to_string(),
+            "de" => "German".to_string(),
+            "es" => "Spanish".to_string(),
+            "ru" => "Russian".to_string(),
+            "it" => "Italian".to_string(),
+            "pt" => "Portuguese".to_string(),
+            "pl" => "Polish".to_string(),
+            "nl" => "Dutch".to_string(),
+            "tr" => "Turkish".to_string(),
+            "ar" => "Arabic".to_string(),
+            "hi" => "Hindi".to_string(),
+            "th" => "Thai".to_string(),
+            "vi" => "Vietnamese".to_string(),
+            "sv" => "Swedish".to_string(),
+            "da" => "Danish".to_string(),
+            "no" => "Norwegian".to_string(),
+            "fi" => "Finnish".to_string(),
+            "he" => "Hebrew".to_string(),
+            "hu" => "Hungarian".to_string(),
+            "cs" => "Czech".to_string(),
+            "sk" => "Slovak".to_string(),
+            "bg" => "Bulgarian".to_string(),
+            "hr" => "Croatian".to_string(),
+            "sl" => "Slovenian".to_string(),
+            "et" => "Estonian".to_string(),
+            "lv" => "Latvian".to_string(),
+            "lt" => "Lithuanian".to_string(),
+            "mt" => "Maltese".to_string(),
+            "ga" => "Irish".to_string(),
+            "cy" => "Welsh".to_string(),
+            "eu" => "Basque".to_string(),
+            "ca" => "Catalan".to_string(),
+            "gl" => "Galician".to_string(),
+            "is" => "Icelandic".to_string(),
+            "mk" => "Macedonian".to_string(),
+            "sq" => "Albanian".to_string(),
+            "be" => "Belarusian".to_string(),
+            "uk" => "Ukrainian".to_string(),
+            "az" => "Azerbaijani".to_string(),
+            "kk" => "Kazakh".to_string(),
+            "ky" => "Kyrgyz".to_string(),
+            "uz" => "Uzbek".to_string(),
+            "tg" => "Tajik".to_string(),
+            "am" => "Amharic".to_string(),
+            "ka" => "Georgian".to_string(),
+            "hy" => "Armenian".to_string(),
+            "ne" => "Nepali".to_string(),
+            "si" => "Sinhala".to_string(),
+            "my" => "Burmese".to_string(),
+            "km" => "Khmer".to_string(),
+            "lo" => "Lao".to_string(),
+            "gu" => "Gujarati".to_string(),
+            "pa" => "Punjabi".to_string(),
+            "ta" => "Tamil".to_string(),
+            "te" => "Telugu".to_string(),
+            "kn" => "Kannada".to_string(),
+            "ml" => "Malayalam".to_string(),
+            "bn" => "Bengali".to_string(),
+            "as" => "Assamese".to_string(),
+            "or" => "Odia".to_string(),
+            "mr" => "Marathi".to_string(),
+            "en" => "English".to_string(),
+            _ => code.to_string(), // Fallback to the code itself if not found
         }
     }
 

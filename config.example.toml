@@ -30,12 +30,12 @@ fallback_language = "en"
 
 # Number of tempo values to test (when mode = "Tuned")
 # More steps = more thorough but slower
-explore_steps = 5
+explore_steps = 10
 
 # Tempo range for exploration (when mode = "Tuned")
 # Tests audio speeds from explore_range_min% to explore_range_max%
-# Example: 80-120 tests 80%, 90%, 100%, 110%, 120%
-explore_range_max = 120
+# Example: 80-110 tests 80%, 83%, 87%, 90%, 93%, 97%, 100%, 103%, 107%, 110%
+explore_range_max = 110
 explore_range_min = 80
 
 # Temperature for transcription (0.0 = deterministic, 1.0 = creative)

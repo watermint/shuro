@@ -71,7 +71,7 @@ pub struct TuneParams {
     pub temperature: f32,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TuneResult {
     pub best_transcription: Transcription,
     pub best_tempo: i32,
@@ -256,11 +256,18 @@ pub async fn extract_audio<P: AsRef<Path>>(
     video_path: P,
     audio_path: P,
     ffmpeg_path: &str,
+    original_file_name: Option<&str>,
 ) -> Result<()> {
     let video_path = video_path.as_ref();
     let audio_path = audio_path.as_ref();
 
-    info!("Extracting audio from {} to {}", video_path.display(), audio_path.display());
+    let log_message = if let Some(original_name) = original_file_name {
+        format!("Extracting audio from {}", original_name)
+    } else {
+        format!("Extracting audio from {} to {}", video_path.display(), audio_path.display())
+    };
+    
+    info!("{}", log_message);
 
     let output = Command::new(ffmpeg_path)
         .arg("-i").arg(video_path)
@@ -291,12 +298,19 @@ pub async fn extract_audio_with_tempo<P: AsRef<Path>>(
     audio_path: P,
     ffmpeg_path: &str,
     tempo_percentage: i32,
+    original_file_name: Option<&str>,
 ) -> Result<()> {
     let video_path = video_path.as_ref();
     let audio_path = audio_path.as_ref();
 
-    info!("Extracting audio from {} to {} with tempo {}%", 
-          video_path.display(), audio_path.display(), tempo_percentage);
+    let log_message = if let Some(original_name) = original_file_name {
+        format!("Extracting audio from {} with tempo {}%", original_name, tempo_percentage)
+    } else {
+        format!("Extracting audio from {} to {} with tempo {}%", 
+                video_path.display(), audio_path.display(), tempo_percentage)
+    };
+    
+    info!("{}", log_message);
 
     // Convert percentage to ffmpeg atempo value (e.g., 110% -> 1.1, 80% -> 0.8)
     let tempo_factor = tempo_percentage as f64 / 100.0;

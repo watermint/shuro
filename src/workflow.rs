@@ -5,7 +5,7 @@ use walkdir::WalkDir;
 
 use crate::config::Config;
 use crate::error::{Result, ShuroError};
-use crate::transcribe::{TranscriberTrait, TranscriberFactory};
+use crate::transcribe::{TranscriberTrait, TranscriberFactory, TuneResult};
 use crate::translate::{TranslatorFactory, check_ollama_availability};
 use crate::subtitle::generate_srt;
 use crate::media::{MediaProcessorTrait, MediaProcessorFactory};
@@ -146,9 +146,11 @@ impl Workflow {
         // Step 2: Transcribe with tuning
         info!("Starting transcription with hallucination detection and tempo tuning");
         let tune_result = self.transcriber.tune_transcription(&audio_path).await?;
-        let transcription = tune_result.best_transcription;
-
-        info!("Transcription completed with quality score: {}", tune_result.quality_score);
+        
+        // Display comprehensive tuned transcription results
+        self.display_tuned_results(&tune_result);
+        
+        let transcription = tune_result.best_transcription.clone();
 
         // Step 3: Translate for each target language
         for target_lang in target_languages {
@@ -256,5 +258,41 @@ impl Workflow {
         let output_path = output_path.as_ref();
         
         self.media.embed_subtitles(video_path, subtitles_path, output_path).await
+    }
+
+    /// Display comprehensive tuned transcription results
+    fn display_tuned_results(&self, tune_result: &TuneResult) {
+        info!("");
+        info!("📊 TUNED TRANSCRIPTION RESULTS");
+        info!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+        info!("🎯 Best Configuration:");
+        info!("   • Optimal Tempo: {}%", tune_result.best_tempo);
+        info!("   • Final Segments: {}", tune_result.best_transcription.segments.len());
+        info!("   • Smoothness Score: {:.3} (lower = better)", tune_result.quality_score);
+        info!("   • Temperature: {:.1}", tune_result.best_temperature);
+        
+        if tune_result.all_attempts.len() > 1 {
+            info!("");
+            info!("🔬 Exploration Summary:");
+            info!("   • Tested {} different configurations", tune_result.all_attempts.len());
+            
+            // Show top 3 results 
+            let mut sorted_attempts = tune_result.all_attempts.clone();
+            sorted_attempts.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+            
+            for (i, (tempo, score)) in sorted_attempts.iter().take(3).enumerate() {
+                let indicator = if i == 0 { "🏆" } else if i == 1 { "🥈" } else { "🥉" };
+                info!("   {} Tempo {}%: {:.3}", indicator, tempo, score);
+            }
+            
+            if sorted_attempts.len() > 3 {
+                info!("   ... and {} other configurations tested", sorted_attempts.len() - 3);
+            }
+        }
+        
+        info!("");
+        info!("✅ Transcription optimization complete!");
+        info!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+        info!("");
     }
 } 

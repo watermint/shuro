@@ -7,7 +7,8 @@
 use anyhow::Result;
 use clap::Parser;
 use tracing::{info, Level};
-use tracing_subscriber::FmtSubscriber;
+use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+use tracing_appender::{non_blocking, rolling};
 
 use shuro::cli::{Args, Commands, CacheAction};
 use shuro::config::{Config, TranslationMode, TranscriptionMode};
@@ -20,37 +21,13 @@ use shuro::error::ShuroError;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Initialize logging (only if not already set)
-    let _ = FmtSubscriber::builder()
-        .with_max_level(Level::INFO)
-        .with_target(false)
-        .with_thread_ids(true)
-        .with_thread_names(true)
-        .with_file(true)
-        .with_line_number(true)
-        .try_init();
-
     info!("Starting Shuro - Automated Subtitle Translation Workflow");
 
     // Parse command line arguments
     let args = Args::parse();
 
-    // Set log level based on verbosity
-    if args.verbose {
-        // Only set if no global subscriber is already set
-        if tracing::subscriber::set_global_default(
-            FmtSubscriber::builder()
-                .with_max_level(Level::DEBUG)
-                .with_target(false)
-                .with_thread_ids(true)
-                .with_thread_names(true)
-                .with_file(true)
-                .with_line_number(true)
-                .finish(),
-        ).is_err() {
-            eprintln!("Warning: Global tracing subscriber already set, using existing configuration");
-        }
-    }
+    // Setup logging to both console and file
+    setup_logging(args.verbose)?;
 
     // Load configuration
     let mut config = match &args.config {
@@ -440,6 +417,56 @@ async fn main() -> Result<()> {
     }
 
     info!("Shuro workflow completed successfully");
+    Ok(())
+}
+
+/// Setup logging to both console and file
+fn setup_logging(verbose: bool) -> Result<()> {
+    // Create log directory
+    let shuro_dir = std::env::current_dir()?.join(".shuro");
+    let log_dir = shuro_dir.join("log");
+    std::fs::create_dir_all(&log_dir)?;
+
+    // Set up file appender with daily rotation
+    let file_appender = rolling::daily(&log_dir, "shuro.log");
+    let (non_blocking_file, _guard) = non_blocking(file_appender);
+    // Keep the guard alive for the duration of the program
+    std::mem::forget(_guard);
+
+    // Determine log level
+    let log_level = if verbose { Level::DEBUG } else { Level::INFO };
+
+    // Create console layer
+    let console_layer = fmt::layer()
+        .with_target(false)
+        .with_thread_ids(true)
+        .with_thread_names(true)
+        .with_file(true)
+        .with_line_number(true);
+
+    // Create file layer
+    let file_layer = fmt::layer()
+        .with_writer(non_blocking_file)
+        .with_target(false)
+        .with_thread_ids(true)
+        .with_thread_names(true)
+        .with_file(true)
+        .with_line_number(true)
+        .with_ansi(false); // No ANSI colors in file
+
+    // Setup layered subscriber
+    let subscriber = tracing_subscriber::registry()
+        .with(EnvFilter::from_default_env().add_directive(log_level.into()))
+        .with(console_layer)
+        .with(file_layer);
+
+    // Initialize the subscriber
+    subscriber.try_init()
+        .map_err(|e| anyhow::anyhow!("Failed to initialize logging: {}", e))?;
+
+    info!("Logging initialized - console: {}, file: {}", 
+          log_level, log_dir.join("shuro.log").display());
+
     Ok(())
 }
 

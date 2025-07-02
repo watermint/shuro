@@ -119,6 +119,24 @@ impl WhisperCppTranscriber {
     async fn simple_transcribe(&self, audio_path: &Path, language: Option<&str>) -> Result<Transcription> {
         info!("Using simple whisper transcription for: {}", audio_path.display());
         
+        // Generate cache key
+        let cache_key = WhisperUtils::generate_file_hash(
+            audio_path,
+            &[&self.config.transcribe_model, &self.config.temperature.to_string(), language.unwrap_or("auto")]
+        )?;
+        let cache_file = self.cache_dir.join(format!("{}.json", cache_key));
+
+        // Check cache first
+        if cache_file.exists() {
+            info!("Loading simple transcription from cache: {}", cache_file.display());
+            if let Ok(cached_content) = tokio::fs::read_to_string(&cache_file).await {
+                if let Ok(cached_entry) = serde_json::from_str::<TranscriptionCache>(&cached_content) {
+                    info!("Using cached simple transcription");
+                    return Ok(cached_entry.transcription);
+                }
+            }
+        }
+        
         // Create temporary output directory
         let temp_dir = tempfile::tempdir()
             .map_err(|e| ShuroError::Transcriber(format!("Failed to create temp directory: {}", e)))?;
@@ -157,22 +175,70 @@ impl WhisperCppTranscriber {
 
         // Convert to abstract format
         let abstract_transcription = WhisperCppMapper::to_abstract_transcription(whisper_output)?;
+        let transcription = WhisperCppMapper::to_legacy_transcription(abstract_transcription);
         
-        // Convert to legacy format for compatibility
-        Ok(WhisperCppMapper::to_legacy_transcription(abstract_transcription))
+        // Validate quality
+        if let Err(e) = self.validator.validate_transcription(&transcription) {
+            warn!("Quality validation failed for simple transcription: {}", e);
+        }
+
+        // Cache the result
+        std::fs::create_dir_all(&self.cache_dir)
+            .map_err(|e| ShuroError::Cache(format!("Failed to create cache directory: {}", e)))?;
+        
+        let cache_entry = TranscriptionCache {
+            transcription: transcription.clone(),
+            model: self.config.transcribe_model.clone(),
+            temperature: self.config.temperature,
+            language: language.map(|l| l.to_string()),
+            audio_path: audio_path.to_string_lossy().to_string(),
+            audio_modified: std::fs::metadata(audio_path).ok()
+                .and_then(|m| m.modified().ok())
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_secs()),
+            cached_at: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs(),
+        };
+        
+        let json_content = serde_json::to_string_pretty(&cache_entry)
+            .map_err(|e| ShuroError::Cache(format!("Failed to serialize transcription: {}", e)))?;
+        
+        tokio::fs::write(&cache_file, json_content).await
+            .map_err(|e| ShuroError::Cache(format!("Failed to write cache file: {}", e)))?;
+
+        info!("Simple transcription completed and cached");
+        Ok(transcription)
     }
 
     /// Transcribe with specific tempo using exploration model
     async fn transcribe_with_tempo(&self, video_path: &Path, tempo: i32, use_exploration_model: bool) -> Result<Transcription> {
-        // Create temporary audio file with adjusted tempo
+        // Create cached tempo-adjusted audio file
+        let cache_key = WhisperUtils::generate_file_hash(video_path, &["tempo", &tempo.to_string()])?;
+        let cached_audio = self.audio_cache_dir.join(format!("{}_tempo{}.wav", cache_key, tempo));
+        
+        // Create cache directory if needed
+        if let Some(parent) = cached_audio.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| ShuroError::Cache(format!("Failed to create audio cache dir: {}", e)))?;
+        }
+        
+        // Extract audio with tempo adjustment if not cached
+        if !cached_audio.exists() {
+            let original_name = video_path.file_name()
+                .and_then(|n| n.to_str());
+            super::common::extract_audio_with_tempo(video_path, &cached_audio, "ffmpeg", tempo, original_name).await?;
+        } else {
+            let original_name = video_path.file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("unknown");
+            info!("Using cached tempo-adjusted audio for: {} (tempo {}%)", original_name, tempo);
+        }
+        
+        // Create temporary output directory for transcription
         let temp_dir = tempfile::tempdir()
             .map_err(|e| ShuroError::Transcriber(format!("Failed to create temp directory: {}", e)))?;
-        let temp_audio = temp_dir.path().join("audio_tempo.wav");
-        
-        // Extract audio with tempo adjustment
-        super::common::extract_audio_with_tempo(video_path, &temp_audio, "ffmpeg", tempo).await?;
-        
-        // Create output directory for transcription
         let output_dir = temp_dir.path().join("output");
         std::fs::create_dir_all(&output_dir)
             .map_err(|e| ShuroError::Transcriber(format!("Failed to create output dir: {}", e)))?;
@@ -187,7 +253,7 @@ impl WhisperCppTranscriber {
         // Build whisper command
         let output_file = output_dir.join("transcription");
         let mut cmd = Command::new(&self.config.binary_path);
-        cmd.arg("-f").arg(&temp_audio)
+        cmd.arg("-f").arg(&cached_audio)
             .arg("-m").arg(model)
             .arg("-of").arg(&output_file)
             .arg("-oj"); // Output JSON format
@@ -218,6 +284,34 @@ impl WhisperCppTranscriber {
     /// Tuned transcription: find best tempo first, then transcribe with optimal settings
     async fn tuned_transcribe(&self, video_path: &Path, language: Option<&str>) -> Result<TuneResult> {
         info!("Starting tuned transcription for: {}", video_path.display());
+        
+        // Generate cache key for tuned transcription
+        let cache_key = WhisperUtils::generate_file_hash(
+            video_path,
+            &[
+                "tuned",
+                &self.config.explore_model,
+                &self.config.transcribe_model, 
+                &self.config.temperature.to_string(),
+                &self.config.explore_range_min.to_string(),
+                &self.config.explore_range_max.to_string(),
+                &self.config.explore_steps.to_string(),
+                language.unwrap_or("auto"),
+            ]
+        )?;
+        let cache_file = self.cache_dir.join(format!("tuned_{}.json", cache_key));
+
+        // Check cache first
+        if cache_file.exists() {
+            info!("Loading tuned transcription from cache: {}", cache_file.display());
+            if let Ok(cached_content) = tokio::fs::read_to_string(&cache_file).await {
+                if let Ok(cached_result) = serde_json::from_str::<TuneResult>(&cached_content) {
+                    info!("Using cached tuned transcription (best tempo: {}%, quality: {:.3})", 
+                          cached_result.best_tempo, cached_result.quality_score);
+                    return Ok(cached_result);
+                }
+            }
+        }
         
         // Generate tempo test range
         let tempo_range = super::common::generate_tempo_range(
@@ -271,14 +365,28 @@ impl WhisperCppTranscriber {
             warn!("Quality validation failed for best tempo {}: {}", best_tempo, e);
         }
         
-        Ok(TuneResult {
+        let tune_result = TuneResult {
             best_transcription: final_transcription,
             best_tempo,
             best_temperature: self.config.temperature,
             quality_score: best_smoothness,
             all_attempts,
             tested_parameters,
-        })
+        };
+
+        // Cache the result
+        std::fs::create_dir_all(&self.cache_dir)
+            .map_err(|e| ShuroError::Cache(format!("Failed to create cache directory: {}", e)))?;
+        
+        let json_content = serde_json::to_string_pretty(&tune_result)
+            .map_err(|e| ShuroError::Cache(format!("Failed to serialize tune result: {}", e)))?;
+        
+        tokio::fs::write(&cache_file, json_content).await
+            .map_err(|e| ShuroError::Cache(format!("Failed to write tuned cache file: {}", e)))?;
+
+        info!("Tuned transcription completed and cached (best tempo: {}%, quality: {:.3})", 
+              best_tempo, best_smoothness);
+        Ok(tune_result)
     }
 }
 
@@ -340,24 +448,19 @@ impl TranscriberTrait for WhisperCppTranscriber {
                 .map_err(|e| ShuroError::Cache(format!("Failed to create audio cache dir: {}", e)))?;
         }
         
-        // Extract audio using ffmpeg
-        let output = Command::new("ffmpeg")
-            .args(&[
-                "-i", &video_path.to_string_lossy(),
-                "-vn",
-                "-acodec", "pcm_s16le",
-                "-ar", "16000",
-                "-ac", "1",
-                "-y",
-                &audio_path.to_string_lossy()
-            ])
-            .output()
-            .map_err(|e| ShuroError::Transcriber(format!("Failed to extract audio: {}", e)))?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(ShuroError::Transcriber(format!("Audio extraction failed: {}", stderr)));
+        // Check if already cached
+        if audio_path.exists() {
+            let original_name = video_path.file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("unknown");
+            info!("Using cached audio for: {}", original_name);
+            return Ok(audio_path);
         }
+        
+        // Extract audio using the common function with proper original file name logging
+        let original_name = video_path.file_name()
+            .and_then(|n| n.to_str());
+        super::common::extract_audio(video_path, &audio_path, "ffmpeg", original_name).await?;
 
         Ok(audio_path)
     }

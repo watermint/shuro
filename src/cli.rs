@@ -37,7 +37,7 @@ pub enum Commands {
         translation_mode: String,
 
         /// Transcription mode (simple, tuned)
-        #[arg(long, default_value = "simple")]
+        #[arg(long, default_value = "tuned")]
         transcription_mode: String,
     },
 
@@ -60,7 +60,7 @@ pub enum Commands {
         translation_mode: String,
 
         /// Transcription mode (simple, tuned)
-        #[arg(long, default_value = "simple")]
+        #[arg(long, default_value = "tuned")]
         transcription_mode: String,
     },
 
@@ -103,7 +103,7 @@ pub enum Commands {
         language: Option<String>,
 
         /// Transcription mode (simple, tuned)
-        #[arg(long, default_value = "simple")]
+        #[arg(long, default_value = "tuned")]
         transcription_mode: String,
     },
 

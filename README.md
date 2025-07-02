@@ -66,11 +66,11 @@ An automated workflow for adding translated subtitles to movie files using whisp
 ### Basic Commands
 
 ```bash
-# Process a single video file with simple transcription (default)
+# Process a single video file with tuned transcription (default)
 ./target/release/shuro process -i video.mp4 -t "ja,ko" -o output/
 
-# Process with tuned transcription mode (finds optimal audio speed first)
-./target/release/shuro process -i video.mp4 -t "ja,ko" -o output/ --transcription-mode tuned
+# Process with simple transcription mode (faster but no optimization)
+./target/release/shuro process -i video.mp4 -t "ja,ko" -o output/ --transcription-mode simple
 
 # Process all videos in a directory with tuned transcription
 ./target/release/shuro batch -i videos/ -t "ja" -o output/ --transcription-mode tuned
@@ -93,11 +93,11 @@ You can also run individual steps:
 # 1. Extract audio from video
 ./target/release/shuro extract -i video.mp4 -o audio.wav
 
-# 2. Transcribe with simple mode (default)
+# 2. Transcribe with tuned mode (default, finds optimal speed first)
 ./target/release/shuro transcribe -i audio.wav -o transcript.json
 
-# 2. Transcribe with tuned mode (finds optimal speed first)
-./target/release/shuro transcribe -i audio.wav -o transcript.json --transcription-mode tuned
+# 2. Transcribe with simple mode (faster but no optimization)
+./target/release/shuro transcribe -i audio.wav -o transcript.json --transcription-mode simple
 
 # 3. Translate transcription
 ./target/release/shuro translate -i transcript.json -o translated.json -t "ja"
@@ -113,15 +113,15 @@ Create a `config.toml` file to customize behavior:
 ```toml
 [transcriber]
 binary_path = "whisper"
-# Transcription mode: "simple" (default) or "tuned"
-mode = "simple"
+# Transcription mode: "simple" or "tuned" (default)
+mode = "tuned"
 # Model for exploration phase (when mode = "tuned")
 explore_model = "base"
 # Model for final transcription
 transcribe_model = "medium"
 # Tempo exploration settings (when mode = "tuned")
-explore_steps = 5
-explore_range_max = 120
+explore_steps = 10
+explore_range_max = 110
 explore_range_min = 80
 # Acceptable languages
 acceptable_languages = "en,ja,ko,zh,fr,de,es,ru,it,pt"
@@ -185,12 +185,12 @@ When you run any processing command, Shuro will automatically check for the requ
 
 1. **Audio Extraction**: Uses FFmpeg to extract audio from video files
 2. **Transcription**: Two modes available:
-   - **Simple Mode**: Direct transcription with configured model and settings (faster)
-   - **Tuned Mode**: 
-     - Tests different audio speeds (configurable range, e.g., 80-120%) with a smaller exploration model
+   - **Tuned Mode** (default): 
+     - Tests different audio speeds (configurable range, e.g., 80-110%) with a smaller exploration model
      - Calculates segment smoothness (how evenly distributed segment lengths are)
      - Selects the tempo that produces the most evenly distributed segments
      - Performs final transcription using the optimal tempo with the full quality model
+   - **Simple Mode**: Direct transcription with configured model and settings (faster)
 3. **Quality Validation**: Detects hallucinations, repetitive content, and validates transcription quality
 4. **Translation**: 
    - Translates each segment using local LLM
