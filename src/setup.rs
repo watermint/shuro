@@ -40,14 +40,14 @@ impl SetupManager {
     /// Initialize the application, downloading necessary files if needed
     pub async fn initialize(&self, config: &mut Config) -> Result<()> {
         info!("Initializing Shuro application...");
-        info!("Current explore model: {}", config.whisper.explore_model);
-        info!("Current transcribe model: {}", config.whisper.transcribe_model);
+        info!("Current explore model: {}", config.transcriber.explore_model);
+        info!("Current transcribe model: {}", config.transcriber.transcribe_model);
 
         // Check and download required whisper models
         self.ensure_whisper_models(config).await?;
 
-        info!("Updated explore model: {}", config.whisper.explore_model);
-        info!("Updated transcribe model: {}", config.whisper.transcribe_model);
+        info!("Updated explore model: {}", config.transcriber.explore_model);
+        info!("Updated transcribe model: {}", config.transcriber.transcribe_model);
         info!("Initialization completed successfully");
         Ok(())
     }
@@ -60,25 +60,25 @@ impl SetupManager {
         let available_models = self.get_available_models();
         
         // Check and download exploration model
-        if !self.model_exists(&config.whisper.explore_model) {
-            info!("Exploration model not found: {}", config.whisper.explore_model);
-            let model = self.select_appropriate_model(&available_models, &config.whisper.explore_model)?;
+        if !self.model_exists(&config.transcriber.explore_model) {
+            info!("Exploration model not found: {}", config.transcriber.explore_model);
+            let model = self.select_appropriate_model(&available_models, &config.transcriber.explore_model)?;
             let local_path = self.download_model(&model).await?;
-            config.whisper.explore_model = local_path;
+            config.transcriber.explore_model = local_path;
         } else {
             // Model exists, but if it's just a name, resolve to full path
-            config.whisper.explore_model = self.resolve_model_path(&config.whisper.explore_model);
+            config.transcriber.explore_model = self.resolve_model_path(&config.transcriber.explore_model);
         }
 
         // Check and download transcription model
-        if !self.model_exists(&config.whisper.transcribe_model) {
-            info!("Transcription model not found: {}", config.whisper.transcribe_model);
-            let model = self.select_appropriate_model(&available_models, &config.whisper.transcribe_model)?;
+        if !self.model_exists(&config.transcriber.transcribe_model) {
+            info!("Transcription model not found: {}", config.transcriber.transcribe_model);
+            let model = self.select_appropriate_model(&available_models, &config.transcriber.transcribe_model)?;
             let local_path = self.download_model(&model).await?;
-            config.whisper.transcribe_model = local_path;
+            config.transcriber.transcribe_model = local_path;
         } else {
             // Model exists, but if it's just a name, resolve to full path
-            config.whisper.transcribe_model = self.resolve_model_path(&config.whisper.transcribe_model);
+            config.transcriber.transcribe_model = self.resolve_model_path(&config.transcriber.transcribe_model);
         }
 
         Ok(())

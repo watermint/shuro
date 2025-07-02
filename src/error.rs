@@ -14,8 +14,8 @@ pub enum ShuroError {
     #[error("HTTP request error: {0}")]
     Http(#[from] reqwest::Error),
 
-    #[error("Whisper transcription error: {0}")]
-    Whisper(String),
+    #[error("Transcription error: {0}")]
+    Transcriber(String),
 
     #[error("Translation error: {0}")]
     Translation(String),

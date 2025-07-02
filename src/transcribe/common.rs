@@ -1,10 +1,68 @@
 use std::path::Path;
 use std::process::Command;
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 use serde::{Serialize, Deserialize};
 use tracing::info;
 
 use crate::error::{Result, ShuroError};
-use crate::quality::Transcription;
+use crate::quality::{Transcription, TranscriptionSegment};
+
+/// Abstract transcription segment that is service-agnostic
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AbstractTranscriptionSegment {
+    pub id: i32,
+    pub start_time: f64,
+    pub end_time: f64,
+    pub text: String,
+    pub confidence: Option<f32>,
+    pub language: Option<String>,
+}
+
+/// Abstract transcription result that is service-agnostic
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AbstractTranscription {
+    pub text: String,
+    pub segments: Vec<AbstractTranscriptionSegment>,
+    pub language: String,
+    pub duration: Option<f64>,
+    pub model_info: Option<String>,
+}
+
+/// Trait for converting service-specific transcription formats to abstract format
+pub trait TranscriptionMapper<T> {
+    /// Convert service-specific format to abstract transcription
+    fn to_abstract_transcription(service_result: T) -> Result<AbstractTranscription>;
+    
+    /// Convert abstract transcription to legacy format for compatibility
+    fn to_legacy_transcription(abstract_result: AbstractTranscription) -> Transcription;
+}
+
+/// Convert abstract transcription to the existing Transcription format for backward compatibility
+impl From<AbstractTranscription> for Transcription {
+    fn from(abstract_transcription: AbstractTranscription) -> Self {
+        let segments = abstract_transcription.segments
+            .into_iter()
+            .map(|seg| TranscriptionSegment {
+                id: seg.id,
+                start: seg.start_time,
+                end: seg.end_time,
+                text: seg.text,
+                tokens: vec![], // Not always available
+                temperature: 0.0, // Default value
+                avg_logprob: seg.confidence.unwrap_or(0.0),
+                compression_ratio: 1.0, // Default value
+                no_speech_prob: 1.0 - seg.confidence.unwrap_or(0.5), // Inverse of confidence
+            })
+            .collect();
+
+        Transcription {
+            text: abstract_transcription.text,
+            segments,
+            language: abstract_transcription.language,
+        }
+    }
+}
 
 #[derive(Debug)]
 pub struct TuneParams {
@@ -77,17 +135,14 @@ impl WhisperUtils {
 
     /// Generate file hash for caching
     pub fn generate_file_hash<P: AsRef<Path>>(path: P, additional_data: &[&str]) -> Result<String> {
-        use std::collections::hash_map::DefaultHasher;
-        use std::hash::{Hash, Hasher};
-        
         let path = path.as_ref();
         
         // Get file metadata
         let metadata = std::fs::metadata(path)
-            .map_err(|e| ShuroError::Whisper(format!("Failed to read file metadata: {}", e)))?;
+            .map_err(|e| ShuroError::Transcriber(format!("Failed to read file metadata: {}", e)))?;
         
         let modified = metadata.modified()
-            .map_err(|e| ShuroError::Whisper(format!("Failed to get modification time: {}", e)))?
+            .map_err(|e| ShuroError::Transcriber(format!("Failed to get modification time: {}", e)))?
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs();
@@ -108,14 +163,14 @@ impl WhisperUtils {
     /// Check if directory exists and create if not
     pub async fn ensure_directory<P: AsRef<Path>>(path: P) -> Result<()> {
         tokio::fs::create_dir_all(path).await
-            .map_err(|e| ShuroError::Whisper(format!("Failed to create directory: {}", e)))?;
+            .map_err(|e| ShuroError::Transcriber(format!("Failed to create directory: {}", e)))?;
         Ok(())
     }
 
     /// Get file size
     pub fn get_file_size<P: AsRef<Path>>(path: P) -> Result<u64> {
         let metadata = std::fs::metadata(path)
-            .map_err(|e| ShuroError::Whisper(format!("Failed to read file metadata: {}", e)))?;
+            .map_err(|e| ShuroError::Transcriber(format!("Failed to read file metadata: {}", e)))?;
         Ok(metadata.len())
     }
 
@@ -216,11 +271,11 @@ pub async fn extract_audio<P: AsRef<Path>>(
         .arg("-y") // Overwrite output
         .arg(audio_path)
         .output()
-        .map_err(|e| ShuroError::Whisper(format!("Failed to execute ffmpeg: {}", e)))?;
+        .map_err(|e| ShuroError::Transcriber(format!("Failed to execute ffmpeg: {}", e)))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(ShuroError::Whisper(format!(
+        return Err(ShuroError::Transcriber(format!(
             "Audio extraction failed: {}",
             stderr
         )));

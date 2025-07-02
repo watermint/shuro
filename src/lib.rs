@@ -6,7 +6,7 @@
 pub mod cli;
 pub mod config;
 pub mod workflow;
-pub mod whisper;
+pub mod transcribe;
 pub mod translate;
 pub mod subtitle;
 pub mod media;

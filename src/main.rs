@@ -14,7 +14,7 @@ use shuro::config::{Config, TranslationMode};
 use shuro::setup::SetupManager;
 use shuro::workflow::Workflow;
 use shuro::quality::QualityValidator;
-use shuro::whisper::WhisperTranscriberFactory;
+use shuro::transcribe::TranscriberFactory;
 use shuro::translate::BaseTranslator;
 use shuro::error::ShuroError;
 
@@ -115,7 +115,7 @@ async fn main() -> Result<()> {
             
             // Create a temporary transcriber to manage cache
             let validator = QualityValidator::new(0.1, 100.0, 5.0);
-            let transcriber = WhisperTranscriberFactory::create_default(config.whisper.clone(), validator);
+            let transcriber = TranscriberFactory::create_default(config.transcriber.clone(), validator);
             
             match action {
                 CacheAction::List => {

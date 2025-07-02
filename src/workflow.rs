@@ -5,7 +5,7 @@ use walkdir::WalkDir;
 
 use crate::config::Config;
 use crate::error::{Result, ShuroError};
-use crate::whisper::{WhisperTranscriberTrait, WhisperTranscriberFactory};
+use crate::transcribe::{TranscriberTrait, TranscriberFactory};
 use crate::translate::{TranslatorFactory, check_ollama_availability};
 use crate::subtitle::generate_srt;
 use crate::media::{MediaProcessorTrait, MediaProcessorFactory};
@@ -13,7 +13,7 @@ use crate::quality::QualityValidator;
 
 pub struct Workflow {
     config: Config,
-    whisper: Box<dyn WhisperTranscriberTrait>,
+    transcriber: Box<dyn TranscriberTrait>,
     media: Box<dyn MediaProcessorTrait>,
 }
 
@@ -25,7 +25,7 @@ impl Workflow {
             config.quality.min_quality_score,
         );
         
-        let whisper = WhisperTranscriberFactory::create_default(config.whisper.clone(), validator);
+        let transcriber = TranscriberFactory::create_default(config.transcriber.clone(), validator);
         let media = MediaProcessorFactory::create_processor(config.media.clone());
 
         // Check dependencies
@@ -33,7 +33,7 @@ impl Workflow {
 
         Ok(Self {
             config,
-            whisper,
+            transcriber,
             media,
         })
     }
@@ -132,20 +132,20 @@ impl Workflow {
             .to_string_lossy();
 
         // Step 1: Get or extract audio (with caching)
-        let audio_path = match self.whisper.get_cached_audio(video_path).await? {
+        let audio_path = match self.transcriber.get_cached_audio(video_path).await? {
             Some(cached_path) => {
                 info!("Using cached audio file");
                 cached_path
             }
             None => {
                 info!("Extracting audio from video directly to cache");
-                self.whisper.extract_and_cache_audio(video_path).await?
+                self.transcriber.extract_and_cache_audio(video_path).await?
             }
         };
 
         // Step 2: Transcribe with tuning
         info!("Starting transcription with hallucination detection and tempo tuning");
-        let tune_result = self.whisper.tune_transcription(&audio_path).await?;
+        let tune_result = self.transcriber.tune_transcription(&audio_path).await?;
         let transcription = tune_result.best_transcription;
 
         info!("Transcription completed with quality score: {}", tune_result.quality_score);
@@ -189,7 +189,7 @@ impl Workflow {
         let audio_path = audio_path.as_ref();
         
         // Check if we have cached audio first
-        if let Ok(Some(cached_path)) = self.whisper.get_cached_audio(video_path).await {
+        if let Ok(Some(cached_path)) = self.transcriber.get_cached_audio(video_path).await {
             info!("Using cached audio file, copying to requested location");
             fs::copy(&cached_path, audio_path).await?;
             return Ok(());
@@ -213,7 +213,7 @@ impl Workflow {
         let audio_path = audio_path.as_ref();
         let output_path = output_path.as_ref();
         
-        let transcription = self.whisper.transcribe(audio_path, language).await?;
+        let transcription = self.transcriber.transcribe(audio_path, language).await?;
         
         // Generate SRT file
         generate_srt(&transcription, output_path).await?;

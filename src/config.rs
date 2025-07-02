@@ -4,15 +4,15 @@ use crate::error::{Result, ShuroError};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
-    pub whisper: WhisperConfig,
+    pub transcriber: TranscriberConfig,
     pub translate: TranslateConfig,
     pub quality: QualityConfig,
     pub media: MediaConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WhisperConfig {
-    /// Path to whisper.cpp binary
+pub struct TranscriberConfig {
+    /// Path to transcriber binary (e.g., whisper-cli)
     pub binary_path: String,
     /// Model to use for exploration phase
     pub explore_model: String,
@@ -83,7 +83,7 @@ pub struct MediaConfig {
 impl Default for Config {
     fn default() -> Self {
         Self {
-            whisper: WhisperConfig {
+            transcriber: TranscriberConfig {
                 binary_path: "whisper-cli".to_string(),
                 explore_model: "base".to_string(),
                 transcribe_model: "medium".to_string(),

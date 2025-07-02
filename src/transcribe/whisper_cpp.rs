@@ -5,24 +5,83 @@ use async_trait::async_trait;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use serde_json;
+use serde::{Serialize, Deserialize};
 use tempfile;
 use tracing::info;
 
-use crate::config::WhisperConfig;
+use crate::config::TranscriberConfig;
 use crate::error::{Result, ShuroError};
-use crate::quality::{Transcription, TranscriptionSegment, QualityValidator};
-use super::{WhisperTranscriberTrait, TuneResult, TranscriptionCache, AudioCache, CacheInfo, common::WhisperUtils};
+use crate::quality::{Transcription, QualityValidator};
+use super::{TranscriberTrait, TuneResult, TranscriptionCache, AudioCache, CacheInfo, common::{WhisperUtils, AbstractTranscription, AbstractTranscriptionSegment, TranscriptionMapper}};
+
+/// Whisper.cpp specific JSON output format
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WhisperCppOutput {
+    pub text: String,
+    pub segments: Vec<WhisperCppSegment>,
+    pub language: Option<String>,
+}
+
+/// Whisper.cpp specific segment format
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WhisperCppSegment {
+    pub id: u64,
+    pub start: f64,
+    pub end: f64,
+    pub text: String,
+    pub tokens: Option<Vec<i32>>,
+    pub temperature: Option<f64>,
+    pub avg_logprob: Option<f64>,
+    pub compression_ratio: Option<f64>,
+    pub no_speech_prob: Option<f64>,
+}
+
+/// Mapper for Whisper.cpp format to abstract format
+pub struct WhisperCppMapper;
+
+impl TranscriptionMapper<WhisperCppOutput> for WhisperCppMapper {
+    fn to_abstract_transcription(whisper_output: WhisperCppOutput) -> Result<AbstractTranscription> {
+        let segments: Vec<AbstractTranscriptionSegment> = whisper_output.segments
+            .into_iter()
+            .map(|seg| AbstractTranscriptionSegment {
+                id: seg.id as i32,
+                start_time: seg.start,
+                end_time: seg.end,
+                text: seg.text.trim().to_string(),
+                confidence: seg.avg_logprob.map(|logprob| {
+                    // Convert log probability to confidence score (0.0 to 1.0)
+                    (logprob.exp() as f32).clamp(0.0, 1.0)
+                }),
+                language: whisper_output.language.clone(),
+            })
+            .collect();
+
+        let duration = segments.last().map(|seg| seg.end_time);
+
+        Ok(AbstractTranscription {
+            text: whisper_output.text,
+            segments,
+            language: whisper_output.language.unwrap_or_else(|| "unknown".to_string()),
+            duration,
+            model_info: Some("Whisper.cpp".to_string()),
+        })
+    }
+
+    fn to_legacy_transcription(abstract_result: AbstractTranscription) -> Transcription {
+        abstract_result.into()
+    }
+}
 
 /// Whisper.cpp implementation (uses system whisper command as fallback)
 pub struct WhisperCppTranscriber {
-    _config: WhisperConfig,
+    _config: TranscriberConfig,
     _validator: QualityValidator,
     cache_dir: PathBuf,
     audio_cache_dir: PathBuf,
 }
 
 impl WhisperCppTranscriber {
-    pub fn new(config: WhisperConfig, validator: QualityValidator) -> Self {
+    pub fn new(config: TranscriberConfig, validator: QualityValidator) -> Self {
         let cache_base = std::env::current_dir()
             .unwrap_or_default()
             .join(".shuro")
@@ -45,7 +104,7 @@ impl WhisperCppTranscriber {
         
         // Create temporary output directory
         let temp_dir = tempfile::tempdir()
-            .map_err(|e| ShuroError::Whisper(format!("Failed to create temp directory: {}", e)))?;
+            .map_err(|e| ShuroError::Transcriber(format!("Failed to create temp directory: {}", e)))?;
         let output_dir = temp_dir.path();
         
         // Build command - use tiny model to avoid PyTorch issues
@@ -61,57 +120,35 @@ impl WhisperCppTranscriber {
 
         // Execute command
         let output = cmd.output()
-            .map_err(|e| ShuroError::Whisper(format!("Failed to execute whisper: {}", e)))?;
+            .map_err(|e| ShuroError::Transcriber(format!("Failed to execute whisper: {}", e)))?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(ShuroError::Whisper(format!("Whisper failed: {}", stderr)));
+            return Err(ShuroError::Transcriber(format!("Whisper failed: {}", stderr)));
         }
 
         // Find and read JSON output
         let audio_filename = audio_path.file_stem()
-            .ok_or_else(|| ShuroError::Whisper("Invalid audio filename".to_string()))?;
+            .ok_or_else(|| ShuroError::Transcriber("Invalid audio filename".to_string()))?;
         let json_file = output_dir.join(format!("{}.json", audio_filename.to_string_lossy()));
 
         let json_content = std::fs::read_to_string(&json_file)
-            .map_err(|e| ShuroError::Whisper(format!("Failed to read output: {}", e)))?;
+            .map_err(|e| ShuroError::Transcriber(format!("Failed to read output: {}", e)))?;
         
-        let json_output: serde_json::Value = serde_json::from_str(&json_content)
-            .map_err(|e| ShuroError::Whisper(format!("Failed to parse JSON: {}", e)))?;
+        // Parse into Whisper.cpp-specific format
+        let whisper_output: WhisperCppOutput = serde_json::from_str(&json_content)
+            .map_err(|e| ShuroError::Transcriber(format!("Failed to parse Whisper.cpp JSON: {}", e)))?;
 
-        // Convert to our format
-        let segments: Vec<TranscriptionSegment> = json_output["segments"]
-            .as_array()
-            .unwrap_or(&Vec::new())
-            .iter()
-            .map(|seg| TranscriptionSegment {
-                id: seg["id"].as_u64().unwrap_or(0) as i32,
-                start: seg["start"].as_f64().unwrap_or(0.0),
-                end: seg["end"].as_f64().unwrap_or(0.0),
-                text: seg["text"].as_str().unwrap_or("").to_string(),
-                tokens: seg["tokens"]
-                    .as_array()
-                    .unwrap_or(&Vec::new())
-                    .iter()
-                    .filter_map(|t| t.as_u64().map(|n| n as i32))
-                    .collect(),
-                temperature: 0.0,
-                avg_logprob: seg["avg_logprob"].as_f64().unwrap_or(0.0) as f32,
-                compression_ratio: seg["compression_ratio"].as_f64().unwrap_or(0.0) as f32,
-                no_speech_prob: seg["no_speech_prob"].as_f64().unwrap_or(0.0) as f32,
-            })
-            .collect();
-
-        Ok(Transcription {
-            text: json_output["text"].as_str().unwrap_or("").to_string(),
-            segments,
-            language: json_output["language"].as_str().unwrap_or("unknown").to_string(),
-        })
+        // Convert to abstract format
+        let abstract_transcription = WhisperCppMapper::to_abstract_transcription(whisper_output)?;
+        
+        // Convert to legacy format for compatibility
+        Ok(WhisperCppMapper::to_legacy_transcription(abstract_transcription))
     }
 }
 
 #[async_trait]
-impl WhisperTranscriberTrait for WhisperCppTranscriber {
+impl TranscriberTrait for WhisperCppTranscriber {
     async fn transcribe(&self, audio_path: &Path, language: Option<&str>) -> Result<Transcription> {
         self.simple_transcribe(audio_path, language).await
     }
@@ -153,11 +190,11 @@ impl WhisperTranscriberTrait for WhisperCppTranscriber {
                 &audio_path.to_string_lossy()
             ])
             .output()
-            .map_err(|e| ShuroError::Whisper(format!("Failed to extract audio: {}", e)))?;
+            .map_err(|e| ShuroError::Transcriber(format!("Failed to extract audio: {}", e)))?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(ShuroError::Whisper(format!("Audio extraction failed: {}", stderr)));
+            return Err(ShuroError::Transcriber(format!("Audio extraction failed: {}", stderr)));
         }
 
         Ok(audio_path)
