@@ -126,7 +126,7 @@ impl Default for Config {
             },
             translate: TranslateConfig {
                 endpoint: "http://localhost:11434".to_string(),
-                model: "llama3.2:3b".to_string(),
+                model: "gemma3n:e4b".to_string(),
                 source_language: "en".to_string(),
                 max_retries: 3,
                 mode: TranslationMode::Simple,
