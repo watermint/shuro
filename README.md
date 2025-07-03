@@ -57,7 +57,7 @@ ollama --version
 ffmpeg -version
 
 # Test Shuro
-./target/release/shuro --help
+./shuro --help
 ```
 
 ## Prerequisites (Other Platforms)
@@ -118,22 +118,22 @@ If you want to build from source or customize the build process:
 
 ```bash
 # Process a single video file with tuned transcription (default)
-./target/release/shuro process -i video.mp4 -t "ja,ko" -o output/
+./shuro process -i video.mp4 -t "ja,ko" -o output/
 
 # Process with simple transcription mode (faster but no optimization)
-./target/release/shuro process -i video.mp4 -t "ja,ko" -o output/ --transcription-mode simple
+./shuro process -i video.mp4 -t "ja,ko" -o output/ --transcription-mode simple
 
 # Process all videos in a directory with tuned transcription
-./target/release/shuro batch -i videos/ -t "ja" -o output/ --transcription-mode tuned
+./shuro batch -i videos/ -t "ja" -o output/ --transcription-mode tuned
 
 # Use different translation modes
-./target/release/shuro process -i video.mp4 -t "ja" --translation-mode context
+./shuro process -i video.mp4 -t "ja" --translation-mode context
 
 # Use custom configuration
-./target/release/shuro -c my-config.toml process -i video.mp4 -t "ja"
+./shuro -c my-config.toml process -i video.mp4 -t "ja"
 
 # Enable verbose logging
-./target/release/shuro -v process -i video.mp4 -t "ja"
+./shuro -v process -i video.mp4 -t "ja"
 ```
 
 ### Step-by-step Processing
@@ -142,19 +142,19 @@ You can also run individual steps:
 
 ```bash
 # 1. Extract audio from video
-./target/release/shuro extract -i video.mp4 -o audio.wav
+./shuro extract -i video.mp4 -o audio.wav
 
 # 2. Transcribe with tuned mode (default, finds optimal speed first)
-./target/release/shuro transcribe -i audio.wav -o transcript.json
+./shuro transcribe -i audio.wav -o transcript.json
 
 # 2. Transcribe with simple mode (faster but no optimization)
-./target/release/shuro transcribe -i audio.wav -o transcript.json --transcription-mode simple
+./shuro transcribe -i audio.wav -o transcript.json --transcription-mode simple
 
 # 3. Translate transcription
-./target/release/shuro translate -i transcript.json -o translated.json -t "ja"
+./shuro translate -i transcript.json -o translated.json -t "ja"
 
 # 4. Embed subtitles into video
-./target/release/shuro embed -v video.mp4 -s subtitles.srt -o output.mp4
+./shuro embed -v video.mp4 -s subtitles.srt -o output.mp4
 ```
 
 ### Configuration
@@ -205,7 +205,7 @@ Shuro automatically downloads required whisper models when they're not available
 #### List Available Models
 
 ```bash
-./target/release/shuro models
+./shuro models
 ```
 
 This shows all available whisper models and their download status:
@@ -223,7 +223,7 @@ large-v3        ggml-large-v3.bin    1550.0     Missing
 #### Download All Models
 
 ```bash
-./target/release/shuro models --download
+./shuro models --download
 ```
 
 This downloads all available models to your local system. Note that the large models can be several GB in size.
