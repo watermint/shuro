@@ -9,6 +9,7 @@ pub mod common;
 pub mod simple;
 pub mod context;
 pub mod nlp;
+pub mod llm;
 
 use async_trait::async_trait;
 
@@ -44,6 +45,9 @@ impl TranslatorFactory {
             }
             TranslationMode::Nlp => {
                 Box::new(nlp::NlpTranslator::new(config))
+            }
+            TranslationMode::Llm => {
+                Box::new(llm::LlmTranslator::new(config))
             }
         }
     }

@@ -2,6 +2,15 @@ use serde::{Deserialize, Serialize};
 use std::path::Path;
 use crate::error::{Result, ShuroError};
 
+// Default values for LLM mode configuration
+fn default_llm_window_size() -> usize {
+    6
+}
+
+fn default_llm_confidence_threshold() -> f64 {
+    0.6
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     pub transcriber: TranscriberConfig,
@@ -56,6 +65,12 @@ pub struct TranslateConfig {
     pub nlp_gap_threshold: f64,
     /// Maximum context window size for context mode
     pub context_window_size: usize,
+    /// Window size for LLM mode (number of segments to analyze at once)
+    #[serde(default = "default_llm_window_size")]
+    pub llm_window_size: usize,
+    /// Minimum confidence threshold for sentence boundaries in LLM mode
+    #[serde(default = "default_llm_confidence_threshold")]
+    pub llm_confidence_threshold: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -66,6 +81,8 @@ pub enum TranslationMode {
     Context,
     /// NLP: Reconstruct complete sentences using natural language processing
     Nlp,
+    /// LLM: Use sliding window approach with LLM to split segments by contextual sentences
+    Llm,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -112,6 +129,8 @@ impl Default for Config {
                 mode: TranslationMode::Simple,
                 nlp_gap_threshold: 2.0,
                 context_window_size: 2,
+                llm_window_size: 15,
+                llm_confidence_threshold: 0.6,
             },
             quality: QualityConfig {
                 repetitive_segment_threshold: 0.8,

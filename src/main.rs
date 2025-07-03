@@ -499,8 +499,9 @@ fn parse_translation_mode(mode: &str) -> Result<TranslationMode> {
         "simple" => Ok(TranslationMode::Simple),
         "context" => Ok(TranslationMode::Context),
         "nlp" => Ok(TranslationMode::Nlp),
+        "llm" => Ok(TranslationMode::Llm),
         _ => Err(ShuroError::Config(format!(
-            "Invalid translation mode '{}'. Valid modes: simple, context, nlp", 
+            "Invalid translation mode '{}'. Valid modes: simple, context, nlp, llm", 
             mode
         )).into()),
     }

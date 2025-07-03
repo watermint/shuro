@@ -276,17 +276,18 @@ impl Workflow {
             info!("🔬 Exploration Summary:");
             info!("   • Tested {} different configurations", tune_result.all_attempts.len());
             
-            // Show top 3 results 
+            // Show all results
             let mut sorted_attempts = tune_result.all_attempts.clone();
             sorted_attempts.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
             
-            for (i, (tempo, score)) in sorted_attempts.iter().take(3).enumerate() {
-                let indicator = if i == 0 { "🏆" } else if i == 1 { "🥈" } else { "🥉" };
+            for (i, (tempo, score)) in sorted_attempts.iter().enumerate() {
+                let indicator = match i {
+                    0 => "🏆",
+                    1 => "🥈",
+                    2 => "🥉",
+                    _ => "  ",
+                };
                 info!("   {} Tempo {}%: {:.3}", indicator, tempo, score);
-            }
-            
-            if sorted_attempts.len() > 3 {
-                info!("   ... and {} other configurations tested", sorted_attempts.len() - 3);
             }
         }
         
