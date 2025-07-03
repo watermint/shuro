@@ -57,6 +57,8 @@ pub struct TranslateConfig {
     pub endpoint: String,
     /// LLM model to use for translation
     pub model: String,
+    /// Source language for translation (language code)
+    pub source_language: String,
     /// Maximum retries for failed translations
     pub max_retries: u32,
     /// Translation optimization mode
@@ -125,6 +127,7 @@ impl Default for Config {
             translate: TranslateConfig {
                 endpoint: "http://localhost:11434".to_string(),
                 model: "llama3.2:3b".to_string(),
+                source_language: "en".to_string(),
                 max_retries: 3,
                 mode: TranslationMode::Simple,
                 nlp_gap_threshold: 2.0,

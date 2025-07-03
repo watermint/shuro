@@ -28,6 +28,10 @@ pub enum Commands {
         #[arg(short, long, default_value = "ja")]
         target_langs: String,
 
+        /// Source language (language code)
+        #[arg(short, long)]
+        source_lang: Option<String>,
+
         /// Output directory for processed files
         #[arg(short, long)]
         output_dir: Option<PathBuf>,
@@ -50,6 +54,10 @@ pub enum Commands {
         /// Target languages for translation (comma-separated)
         #[arg(short, long, default_value = "ja")]
         target_langs: String,
+
+        /// Source language (language code)
+        #[arg(short, long)]
+        source_lang: Option<String>,
 
         /// Output directory for processed files
         #[arg(short, long)]
@@ -120,6 +128,10 @@ pub enum Commands {
         /// Target languages (comma-separated)
         #[arg(short, long)]
         target_langs: String,
+
+        /// Source language (language code)
+        #[arg(short, long)]
+        source_lang: Option<String>,
     },
 
     /// Embed subtitles into video file

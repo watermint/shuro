@@ -166,13 +166,15 @@ impl BaseTranslator {
         translation: &str,
         context: &str,
         target_language: &str,
+        source_language: &str,
     ) -> Result<TranslationQuality> {
-        let language_name = self.language_code_to_name(target_language);
+        let target_language_name = self.language_code_to_name(target_language);
+        let source_language_name = self.language_code_to_name(source_language);
         
         let quality_prompt = format!(
             "You are a professional translation quality evaluator.\n\
              \n\
-             Evaluate the translation quality from English to {} ({}).\n\
+             Evaluate the translation quality from {} to {} ({}).\n\
              \n\
              IMPORTANT CRITERIA:\n\
              1. The translation must be in {} language ONLY\n\
@@ -188,7 +190,7 @@ impl BaseTranslator {
              \n\
              Please return the evaluation results in JSON format as {{\"evaluation\":\"evaluation result\"}}.\n\
              \n\
-             [Source (English)]\n\
+             [Source ({})]\n\
              {}\n\
              \n\
              [Translation (should be in {})]\n\
@@ -196,8 +198,9 @@ impl BaseTranslator {
              \n\
              [Context]\n\
              {}",
-            language_name, target_language, language_name, language_name, language_name, 
-            original, language_name, translation, context
+            source_language_name, target_language_name, target_language, 
+            target_language_name, target_language_name, target_language_name, 
+            source_language_name, original, target_language_name, translation, context
         );
 
         let request = TranslationRequest {

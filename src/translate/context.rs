@@ -74,7 +74,7 @@ impl ContextTranslator {
                     }
                     
                     // Validate translation quality
-                    let quality = self.base.evaluate_translation_quality(&segment.text, &translation, &current_context, target_language).await;
+                    let quality = self.base.evaluate_translation_quality(&segment.text, &translation, &current_context, target_language, &self.base.config.source_language).await;
                     
                     match quality {
                         Ok(TranslationQuality::Perfect | TranslationQuality::Good) => {

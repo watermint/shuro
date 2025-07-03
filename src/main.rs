@@ -345,8 +345,13 @@ async fn main() -> Result<()> {
                 }
             }
         }
-        Commands::Process { input, target_langs, output_dir, translation_mode, transcription_mode } => {
+        Commands::Process { input, target_langs, source_lang, output_dir, translation_mode, transcription_mode } => {
             info!("Processing video file: {}", input.display());
+            
+            // Override source language if provided
+            if let Some(source_lang) = source_lang {
+                config.translate.source_language = source_lang;
+            }
             
             // Parse translation mode
             let translation_mode = parse_translation_mode(&translation_mode)?;
@@ -365,8 +370,13 @@ async fn main() -> Result<()> {
             let workflow = Workflow::new(config)?;
             workflow.process_single_file(&input, &target_languages, output_dir.as_ref()).await?;
         }
-        Commands::Batch { input_dir, target_langs, output_dir, translation_mode, transcription_mode } => {
+        Commands::Batch { input_dir, target_langs, source_lang, output_dir, translation_mode, transcription_mode } => {
             info!("Processing directory: {}", input_dir.display());
+            
+            // Override source language if provided
+            if let Some(source_lang) = source_lang {
+                config.translate.source_language = source_lang;
+            }
             
             // Parse translation mode
             let translation_mode = parse_translation_mode(&translation_mode)?;
@@ -400,14 +410,21 @@ async fn main() -> Result<()> {
             let workflow = Workflow::new(config)?;
             workflow.transcribe_audio(&input, &output, language.as_deref()).await?;
         }
-        Commands::Translate { input, output, target_langs } => {
+        Commands::Translate { input, output, target_langs, source_lang } => {
             info!("Translating subtitles: {}", input.display());
+            
+            // Override source language if provided
+            if let Some(source_lang) = source_lang {
+                config.translate.source_language = source_lang;
+            }
             
             let target_languages = target_langs
                 .split(',')
                 .map(|s| s.trim().to_string())
                 .collect::<Vec<_>>();
 
+            // Create new workflow with updated config
+            let workflow = Workflow::new(config)?;
             workflow.translate_subtitles(&input, &output, &target_languages).await?;
         }
         Commands::Embed { video, subtitles, output } => {

@@ -48,6 +48,10 @@ endpoint = "http://localhost:11434"
 # LLM model to use for translation
 model = "llama3.2:3b"
 
+# Source language for translation (language code)
+# This is the language of the original audio/video that will be translated
+source_language = "en"
+
 # Maximum retries for failed translations
 max_retries = 3
 
