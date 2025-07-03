@@ -13,36 +13,87 @@ An automated workflow for adding translated subtitles to movie files using whisp
 - **Batch Processing**: Process single files or entire directories
 - **Multiple Languages**: Supports translation to multiple target languages simultaneously
 
-## Prerequisites
+## Installation (Mac - Recommended)
 
-1. **whisper.cpp**: Install and make available in PATH
-   ```bash
-   # Clone and build whisper.cpp
-   git clone https://github.com/ggerganov/whisper.cpp.git
-   cd whisper.cpp
-   make
-   # Add to PATH or specify full path in config
-   ```
+For Mac users, we recommend using Homebrew for the easiest installation:
 
-2. **Ollama**: Install and run locally
-   ```bash
-   # Install ollama
-   curl -fsSL https://ollama.ai/install.sh | sh
-   
-   # Pull a model for translation
-   ollama pull llama3.2:3b
-   ```
+### 1. Install Prerequisites with Homebrew
 
-3. **FFmpeg**: Install for video/audio processing
-   ```bash
-   # On macOS
-   brew install ffmpeg
-   
-   # On Ubuntu/Debian
-   sudo apt install ffmpeg
-   ```
+```bash
+# Install Homebrew if you don't have it
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 
-## Installation
+# Install all required tools
+brew install whisper-cpp ollama ffmpeg
+
+# Start Ollama service
+brew services start ollama
+
+# Pull a model for translation (gemma3n:e4b has better multilingual support)
+ollama pull gemma3n:e4b
+```
+
+### 2. Install Shuro
+
+```bash
+# Clone the repository
+git clone https://github.com/watermint/shuro.git
+cd shuro
+
+# Build the project
+cargo build --release
+
+# Copy the sample configuration and customize
+cp config.example.toml my-config.toml
+# Edit my-config.toml to match your system if needed
+```
+
+### 3. Verify Installation
+
+```bash
+# Test that all tools are available
+whisper --help
+ollama --version
+ffmpeg -version
+
+# Test Shuro
+./target/release/shuro --help
+```
+
+## Prerequisites (Other Platforms)
+
+If you're not on Mac or prefer manual installation:
+
+### 1. whisper.cpp
+```bash
+# Clone and build whisper.cpp
+git clone https://github.com/ggerganov/whisper.cpp.git
+cd whisper.cpp
+make
+# Add to PATH or specify full path in config
+```
+
+### 2. Ollama
+```bash
+# Install ollama
+curl -fsSL https://ollama.ai/install.sh | sh
+
+# Pull a model for translation (gemma3n:e4b has better multilingual support)
+ollama pull gemma3n:e4b
+```
+
+### 3. FFmpeg
+```bash
+# On Ubuntu/Debian
+sudo apt install ffmpeg
+
+# On other Linux distributions
+# Check your package manager documentation
+```
+
+## Installation (From Source)
+
+If you want to build from source or customize the build process:
 
 1. Clone the repository:
    ```bash
@@ -57,7 +108,7 @@ An automated workflow for adding translated subtitles to movie files using whisp
 
 3. Copy the sample configuration and customize:
    ```bash
-   cp config.toml my-config.toml
+   cp config.example.toml my-config.toml
    # Edit my-config.toml to match your system
    ```
 
@@ -130,7 +181,7 @@ temperature = 0.0
 
 [translate]
 endpoint = "http://localhost:11434"
-model = "llama3.2:3b"
+model = "gemma3n:e4b"
 # Translation mode: "simple", "context", or "nlp"
 mode = "simple"
 max_retries = 3
